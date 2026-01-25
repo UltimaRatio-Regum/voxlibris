@@ -108,6 +108,15 @@ Or use the combined start script:
 
 ## Recent Changes
 
+- **2026-01-25**: Major LLM parsing upgrade with ChatGPT and speaker confidence scores
+  - Default model changed to ChatGPT 4o (via OpenRouter)
+  - New JSON output format with speaker confidence scores (e.g., {"Shane": 0.95, "Ilya": 0.05})
+  - Segments flagged for review when speaker confidence variance is low
+  - ~30 second audio chunks at natural stopping points (speaker/narration transitions)
+  - Conversational LLM context: parses ~10 paragraphs per prompt, maintaining character context
+  - Sentiment analysis included in LLM output
+  - UI shows "needs review" badges for uncertain speaker assignments
+  - Tooltip shows full confidence breakdown on hover
 - **2026-01-25**: Enhanced LLM speaker detection with chunking and name hints
   - Text is now split into ~2000 char chunks at safe boundaries (avoids splitting quotes)
   - Automatic name extraction finds potential speakers using dialogue verb patterns

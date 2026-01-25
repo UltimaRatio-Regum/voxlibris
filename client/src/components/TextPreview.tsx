@@ -53,7 +53,7 @@ export function TextPreview({
   const dialogueCount = segments.filter((s) => s.type === "dialogue").length;
   const narrationCount = segments.filter((s) => s.type === "narration").length;
   const reviewCount = segments.filter((s) => s.needsReview).length;
-  const speakers = [...new Set(segments.filter((s) => s.speaker).map((s) => s.speaker))];
+  const speakers = Array.from(new Set(segments.filter((s) => s.speaker).map((s) => s.speaker as string)));
 
   return (
     <Card className="h-full flex flex-col">
