@@ -115,7 +115,7 @@ export function TextPreview({
                   <p className={`text-sm leading-relaxed ${
                     segment.type === "dialogue" ? "italic" : ""
                   }`}>
-                    {segment.type === "dialogue" ? `"${segment.text}"` : segment.text}
+                    {segment.text}
                   </p>
                 </div>
               ))}
