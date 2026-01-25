@@ -300,6 +300,7 @@ export async function parseTextWithLLM(
 
 export async function getAvailableModels(): Promise<string[]> {
   return [
+    "openai/chatgpt-5.2",
     "meta-llama/llama-3.3-70b-instruct",
     "meta-llama/llama-3.1-8b-instruct",
     "mistralai/mistral-7b-instruct",
