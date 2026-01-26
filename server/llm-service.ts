@@ -23,7 +23,11 @@ export interface LLMSegment {
   type: "spoken" | "narration";
   text: string;
   speaker_candidates?: SpeakerCandidates;
-  sentiment?: {
+  emotion?: {
+    label: string;
+    score: number;
+  };
+  sentiment?: {  // Legacy fallback
     label: string;
     score: number;
   };
@@ -96,7 +100,7 @@ function convertLLMResult(result: LLMParseResult): ParsedTextResult {
         speaker: isSpoken ? getMostLikelySpeaker(candidates ?? undefined) : null,
         speakerCandidates: candidates ?? null,
         needsReview: needsReview(candidates ?? undefined),
-        sentiment: seg.sentiment ?? null,
+        sentiment: seg.emotion ?? seg.sentiment ?? null,
         chunkId: chunk.chunk_id,
         approxDurationSeconds: chunk.approx_duration_seconds,
       });
@@ -123,6 +127,23 @@ function splitIntoParagraphBatches(text: string, paragraphsPerBatch: number = 10
   return batches.length > 0 ? batches : [text];
 }
 
+// Fixed set of emotions for consistent prosody adjustments
+// Each emotion maps to specific pitch (+/-1%) and speed (+/-1%) adjustments
+const VALID_EMOTIONS = [
+  "neutral",    // No adjustment
+  "happy",      // +1% pitch, +1% speed
+  "sad",        // -1% pitch, -1% speed
+  "angry",      // +1% pitch, +1% speed
+  "fearful",    // +1% pitch, +1% speed
+  "surprised",  // +1% pitch, +1% speed
+  "disgusted",  // -1% pitch, -1% speed
+  "excited",    // +1% pitch, +1% speed
+  "calm",       // 0% pitch, -1% speed
+  "anxious",    // +0.5% pitch, +1% speed
+  "hopeful",    // +0.5% pitch, 0% speed
+  "melancholy", // -0.5% pitch, -1% speed
+] as const;
+
 const SYSTEM_PROMPT = `You are an expert text analyzer for audiobook production. Your task is to parse narrative text into structured chunks suitable for audio generation.
 
 Rules for chunking and segmentation:
@@ -132,10 +153,26 @@ Rules for chunking and segmentation:
 4. Text within quotation marks (straight " or curly "") is spoken dialogue
 5. Text outside quotes is narration
 
-For each spoken segment:
-- Identify the speaker from context clues (dialogue tags like "said John", or contextual inference)
+For each segment:
+- Identify the speaker from context clues (dialogue tags like "said John", or contextual inference) for spoken segments
 - Provide confidence scores for each possible speaker (values 0-1, must sum to 1)
-- Include sentiment analysis (positive, negative, neutral, excited, sad, angry, fearful)
+- Assign an emotion from this FIXED list ONLY: ${VALID_EMOTIONS.join(", ")}
+
+EMOTION REFERENCE TABLE:
+| Emotion    | Use When                                           |
+|------------|---------------------------------------------------|
+| neutral    | Default, factual narration, no strong emotion     |
+| happy      | Joy, pleasure, satisfaction, positive outcomes    |
+| sad        | Sorrow, disappointment, loss, grief               |
+| angry      | Frustration, rage, annoyance, confrontation       |
+| fearful    | Fear, worry, dread, danger, threat                |
+| surprised  | Shock, astonishment, unexpected events            |
+| disgusted  | Revulsion, disapproval, distaste                  |
+| excited    | Enthusiasm, anticipation, energy, thrill          |
+| calm       | Peaceful, serene, relaxed, reassuring             |
+| anxious    | Nervousness, unease, tension, apprehension        |
+| hopeful    | Optimism, anticipation of good, looking forward   |
+| melancholy | Wistful sadness, nostalgia, bittersweet feelings  |
 
 Return JSON in this exact format:
 {
@@ -149,12 +186,12 @@ Return JSON in this exact format:
           "type": "spoken",
           "text": "The exact quoted text including quotes",
           "speaker_candidates": {"CharacterA": 0.9, "CharacterB": 0.1},
-          "sentiment": {"label": "neutral", "score": 0.8}
+          "emotion": {"label": "happy", "score": 0.8}
         },
         {
           "type": "narration", 
           "text": "The narration text",
-          "sentiment": {"label": "neutral", "score": 0.7}
+          "emotion": {"label": "neutral", "score": 0.7}
         }
       ]
     }
@@ -165,7 +202,8 @@ Important:
 - Preserve the EXACT text including quotation marks
 - Include ALL text with no gaps
 - Chunk IDs should be sequential starting from the provided starting ID
-- Use context from previous exchanges to identify speakers consistently`;
+- Use context from previous exchanges to identify speakers consistently
+- ONLY use emotions from the fixed list above - do not invent new emotion labels`;
 
 // Parse text using conversational approach (maintaining context across batches)
 async function parseWithConversation(
@@ -357,7 +395,7 @@ export async function* parseTextWithLLMStreaming(
               speaker: isSpoken ? getMostLikelySpeaker(candidates ?? undefined) : null,
               speakerCandidates: candidates ?? null,
               needsReview: needsReview(candidates ?? undefined),
-              sentiment: seg.sentiment ?? null,
+              sentiment: seg.emotion ?? seg.sentiment ?? null,
               chunkId: chunk.chunk_id,
               approxDurationSeconds: chunk.approx_duration_seconds,
             });

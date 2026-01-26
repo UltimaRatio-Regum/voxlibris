@@ -65,13 +65,22 @@ A web application that converts plain text into expressive audiobooks using AI-p
 
 1. **Text Parsing**: Separates dialogue (quotes) from narration, identifies speakers using dialogue verbs
 
-2. **Sentiment Analysis**: Analyzes text sentiment to apply emotional prosody:
-   - Positive → slight pitch up, faster
-   - Negative → pitch down, slower
-   - Excited → higher pitch, faster
-   - Sad → lower pitch, slower
-   - Angry → pitch up, faster
-   - Fearful → pitch up, faster
+2. **Emotion-Based Prosody**: Applies subtle pitch and speed adjustments based on detected emotion:
+   
+   | Emotion    | Pitch    | Speed    | Description                    |
+   |------------|----------|----------|--------------------------------|
+   | neutral    |  0%      |  0%      | No adjustment                  |
+   | happy      | +1%      | +1%      | Joy, pleasure, positive        |
+   | sad        | -1%      | -1%      | Sorrow, disappointment, loss   |
+   | angry      | +1%      | +1%      | Frustration, confrontation     |
+   | fearful    | +1%      | +1%      | Fear, worry, danger            |
+   | surprised  | +1%      | +1%      | Shock, astonishment            |
+   | disgusted  | -1%      | -1%      | Revulsion, distaste            |
+   | excited    | +1%      | +1%      | Enthusiasm, anticipation       |
+   | calm       |  0%      | -1%      | Peaceful, serene               |
+   | anxious    | +0.5%    | +1%      | Nervousness, tension           |
+   | hopeful    | +0.5%    |  0%      | Optimism, looking forward      |
+   | melancholy | -0.5%    | -1%      | Wistful sadness, nostalgia     |
 
 3. **Smart Chunking**: Splits text at natural break points:
    - Sentence endings (. ! ?)

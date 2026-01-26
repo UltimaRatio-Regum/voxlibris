@@ -17,28 +17,61 @@ except ImportError:
 class AudioProcessor:
     """
     Processes audio files with pitch and speed adjustments
-    based on sentiment analysis using pyrubberband.
+    based on emotion analysis using pyrubberband.
     """
     
-    SENTIMENT_PITCH_MAP = {
-        "positive": 0.5,
-        "negative": -0.5,
-        "neutral": 0,
-        "excited": 1.5,
-        "sad": -1.0,
-        "angry": 0.5,
-        "fearful": 1.0,
+    # Fixed set of emotions with +/-1% adjustments for pitch (semitones) and speed
+    # Emotion adjustments are subtle to maintain natural speech quality
+    # 
+    # | Emotion    | Pitch (semitones) | Speed (factor) | Description                    |
+    # |------------|-------------------|----------------|--------------------------------|
+    # | neutral    |  0.00             | 1.00           | No adjustment                  |
+    # | happy      | +0.12             | 1.01           | Slightly higher, slightly faster|
+    # | sad        | -0.12             | 0.99           | Slightly lower, slightly slower |
+    # | angry      | +0.12             | 1.01           | Slightly higher, slightly faster|
+    # | fearful    | +0.12             | 1.01           | Slightly higher, slightly faster|
+    # | surprised  | +0.12             | 1.01           | Slightly higher, slightly faster|
+    # | disgusted  | -0.12             | 0.99           | Slightly lower, slightly slower |
+    # | excited    | +0.12             | 1.01           | Slightly higher, slightly faster|
+    # | calm       |  0.00             | 0.99           | Normal pitch, slightly slower   |
+    # | anxious    | +0.06             | 1.01           | Slightly higher, slightly faster|
+    # | hopeful    | +0.06             | 1.00           | Slightly higher, normal speed   |
+    # | melancholy | -0.06             | 0.99           | Slightly lower, slightly slower |
+    # 
+    # Note: +0.12 semitones ≈ 1% pitch increase, 1.01 = 1% speed increase
+    
+    EMOTION_PITCH_MAP = {
+        "neutral": 0.0,
+        "happy": 0.12,
+        "sad": -0.12,
+        "angry": 0.12,
+        "fearful": 0.12,
+        "surprised": 0.12,
+        "disgusted": -0.12,
+        "excited": 0.12,
+        "calm": 0.0,
+        "anxious": 0.06,
+        "hopeful": 0.06,
+        "melancholy": -0.06,
     }
     
-    SENTIMENT_SPEED_MAP = {
-        "positive": 1.05,
-        "negative": 0.95,
-        "neutral": 1.0,
-        "excited": 1.15,
-        "sad": 0.85,
-        "angry": 1.1,
-        "fearful": 1.2,
+    EMOTION_SPEED_MAP = {
+        "neutral": 1.00,
+        "happy": 1.01,
+        "sad": 0.99,
+        "angry": 1.01,
+        "fearful": 1.01,
+        "surprised": 1.01,
+        "disgusted": 0.99,
+        "excited": 1.01,
+        "calm": 0.99,
+        "anxious": 1.01,
+        "hopeful": 1.00,
+        "melancholy": 0.99,
     }
+    
+    # Valid emotions that the LLM should use
+    VALID_EMOTIONS = list(EMOTION_PITCH_MAP.keys())
     
     def get_audio_duration(self, file_path: str) -> float:
         """Get the duration of an audio file in seconds."""
@@ -57,6 +90,60 @@ class AudioProcessor:
         """Save audio data to file."""
         sf.write(file_path, data, sample_rate)
     
+    def apply_emotion_prosody(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int,
+        emotion_label: str,
+        emotion_score: float = 1.0,
+        base_pitch_offset: float = 0,
+        base_speed_factor: float = 1.0,
+    ) -> np.ndarray:
+        """
+        Apply pitch and speed changes based on emotion.
+        
+        Args:
+            audio_data: Audio samples as numpy array
+            sample_rate: Sample rate in Hz
+            emotion_label: Detected emotion (happy, sad, angry, etc.)
+            emotion_score: Confidence of emotion (0-1), used to scale the effect
+            base_pitch_offset: Additional pitch offset in semitones
+            base_speed_factor: Additional speed multiplier
+            
+        Returns:
+            Processed audio data
+        """
+        if not PYRUBBERBAND_AVAILABLE:
+            return audio_data
+        
+        # Normalize emotion label to lowercase
+        emotion_label = emotion_label.lower() if emotion_label else "neutral"
+        
+        # Get emotion-based adjustments (+/-1% as specified)
+        pitch_offset = self.EMOTION_PITCH_MAP.get(emotion_label, 0) * emotion_score
+        pitch_offset += base_pitch_offset
+        
+        speed_factor = self.EMOTION_SPEED_MAP.get(emotion_label, 1.0)
+        # Scale the speed adjustment by emotion score
+        speed_factor = 1.0 + (speed_factor - 1.0) * emotion_score
+        speed_factor *= base_speed_factor
+        
+        # Clamp to safe ranges
+        speed_factor = max(0.5, min(2.0, speed_factor))
+        pitch_offset = max(-12, min(12, pitch_offset))
+        
+        processed = audio_data
+        
+        # Apply speed change (even small changes like 1%)
+        if abs(speed_factor - 1.0) > 0.001:
+            processed = pyrb.time_stretch(processed, sample_rate, speed_factor)
+        
+        # Apply pitch shift (even small changes like 0.12 semitones)
+        if abs(pitch_offset) > 0.01:
+            processed = pyrb.pitch_shift(processed, sample_rate, pitch_offset)
+        
+        return processed
+    
     def apply_sentiment_prosody(
         self,
         audio_data: np.ndarray,
@@ -67,41 +154,12 @@ class AudioProcessor:
         base_speed_factor: float = 1.0,
     ) -> np.ndarray:
         """
-        Apply pitch and speed changes based on sentiment.
-        
-        Args:
-            audio_data: Audio samples as numpy array
-            sample_rate: Sample rate in Hz
-            sentiment_label: Detected sentiment (positive, negative, etc.)
-            sentiment_score: Confidence of sentiment (0-1)
-            base_pitch_offset: Additional pitch offset in semitones
-            base_speed_factor: Additional speed multiplier
-            
-        Returns:
-            Processed audio data
+        Legacy method - redirects to apply_emotion_prosody for backwards compatibility.
         """
-        if not PYRUBBERBAND_AVAILABLE:
-            return audio_data
-        
-        pitch_offset = self.SENTIMENT_PITCH_MAP.get(sentiment_label, 0) * sentiment_score
-        pitch_offset += base_pitch_offset
-        
-        speed_factor = self.SENTIMENT_SPEED_MAP.get(sentiment_label, 1.0)
-        speed_factor = 1.0 + (speed_factor - 1.0) * sentiment_score
-        speed_factor *= base_speed_factor
-        
-        speed_factor = max(0.5, min(2.0, speed_factor))
-        pitch_offset = max(-12, min(12, pitch_offset))
-        
-        processed = audio_data
-        
-        if abs(speed_factor - 1.0) > 0.01:
-            processed = pyrb.time_stretch(processed, sample_rate, speed_factor)
-        
-        if abs(pitch_offset) > 0.1:
-            processed = pyrb.pitch_shift(processed, sample_rate, pitch_offset)
-        
-        return processed
+        return self.apply_emotion_prosody(
+            audio_data, sample_rate, sentiment_label, sentiment_score,
+            base_pitch_offset, base_speed_factor
+        )
     
     def apply_pitch_shift(
         self,
