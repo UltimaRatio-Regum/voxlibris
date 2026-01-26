@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["ffmpeg", "libsndfile", "libxcrypt", "pkg-config", "rubberband", "xsimd"]
+packages = ["antlr", "cargo", "ffmpeg", "ffmpeg-full", "jre", "libiconv", "libsndfile", "libxcrypt", "pkg-config", "rubberband", "rustc", "xsimd"]
 
 [[ports]]
 localPort = 5000
