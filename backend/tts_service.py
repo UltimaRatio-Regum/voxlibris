@@ -370,7 +370,7 @@ class TTSService:
                     text,
                     None,  # seed (optional, None for random)
                     handle_file(voice_path),  # voice reference audio file
-                    api_name="/gradio_api/api/tts_to_mp3"
+                    api_name="/tts_to_mp3"
                 )
                 return result
             
