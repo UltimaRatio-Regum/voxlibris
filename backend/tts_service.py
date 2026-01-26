@@ -57,6 +57,41 @@ OPENAI_TTS_VOICES = {
     "default": "alloy",
 }
 
+SENTIMENT_EXAGGERATION_MAP = {
+    "neutral": 0.5,
+    "happy": 0.7,
+    "sad": 0.6,
+    "angry": 0.85,
+    "fearful": 0.75,
+    "surprised": 0.8,
+    "disgusted": 0.7,
+    "excited": 0.9,
+    "calm": 0.4,
+    "anxious": 0.75,
+    "hopeful": 0.6,
+    "melancholy": 0.55,
+}
+
+
+def get_sentiment_exaggeration(sentiment_label: str, sentiment_score: float, base_exaggeration: float = 0.5) -> float:
+    """
+    Calculate Chatterbox exaggeration parameter based on segment sentiment.
+    Higher exaggeration = more expressive/emotional speech.
+    
+    Args:
+        sentiment_label: The emotion label (e.g., "happy", "sad", "angry")
+        sentiment_score: Confidence score 0-1 for the sentiment
+        base_exaggeration: Default exaggeration from config
+    
+    Returns:
+        Adjusted exaggeration value between 0.0 and 1.0
+    """
+    target_exaggeration = SENTIMENT_EXAGGERATION_MAP.get(sentiment_label.lower(), base_exaggeration)
+    
+    adjusted = base_exaggeration + (target_exaggeration - base_exaggeration) * sentiment_score
+    
+    return max(0.0, min(1.0, adjusted))
+
 
 class TTSService:
     """
@@ -132,12 +167,22 @@ class TTSService:
                     # Uploaded voice sample
                     voice_path = voice_files.get(voice_id)
             
+            exaggeration = config.defaultExaggeration
+            is_chatterbox = config.ttsEngine in ("chatterbox", "chatterbox-free", "chatterbox-paid")
+            if is_chatterbox and segment.sentiment:
+                exaggeration = get_sentiment_exaggeration(
+                    segment.sentiment.label,
+                    segment.sentiment.score,
+                    config.defaultExaggeration,
+                )
+                logger.info(f"  Chatterbox exaggeration adjusted to {exaggeration:.2f} for sentiment '{segment.sentiment.label}'")
+            
             audio = await self._generate_segment_audio_async(
                 text=segment.text,
                 voice_path=voice_path,
                 edge_voice=edge_voice if config.ttsEngine == "edge-tts" else None,
                 openai_voice=openai_voice if config.ttsEngine == "openai" else None,
-                exaggeration=config.defaultExaggeration,
+                exaggeration=exaggeration,
                 tts_engine=config.ttsEngine,
             )
             
@@ -213,6 +258,7 @@ class TTSService:
         """
         Generate audio for a single text segment.
         Dispatches to the appropriate TTS engine based on config.
+        Raises exceptions if the engine fails (no fallbacks).
         """
         if tts_engine == "chatterbox-free" or tts_engine == "chatterbox":
             # "chatterbox" is legacy, treat as chatterbox-free
@@ -229,10 +275,12 @@ class TTSService:
             return await self._generate_with_piper(text, voice_path)
         elif tts_engine == "soprano":
             return await self._generate_with_soprano(text)
-        else:  # edge-tts (default)
-            if EDGE_TTS_AVAILABLE:
-                return await self._generate_with_edge_tts(text, edge_voice or "en-US-AriaNeural")
-            return self._synthesize_fallback(text)
+        elif tts_engine == "edge-tts":
+            if not EDGE_TTS_AVAILABLE:
+                raise RuntimeError("edge-tts is not installed. Please install it with: pip install edge-tts")
+            return await self._generate_with_edge_tts(text, edge_voice or "en-US-AriaNeural")
+        else:
+            raise ValueError(f"Unknown TTS engine: {tts_engine}")
     
     async def _generate_with_chatterbox_free(
         self,
@@ -242,10 +290,14 @@ class TTSService:
     ) -> np.ndarray:
         """
         Generate audio using Chatterbox TTS via free HuggingFace Spaces.
-        Tries local GPU model first, then falls back to HuggingFace Spaces via Gradio.
+        Tries local GPU model first, then HuggingFace Spaces via Gradio.
+        Raises exceptions on failure (no fallbacks).
         """
+        if not voice_path:
+            raise ValueError("Chatterbox Free requires a voice sample. Please select a voice from the library or upload one.")
+        
         # Try local Chatterbox with CUDA first
-        if self.model is not None and voice_path:
+        if self.model is not None:
             try:
                 wav = self.model.generate(
                     text,
@@ -254,19 +306,10 @@ class TTSService:
                 )
                 return wav.numpy().flatten()
             except Exception as e:
-                logger.warning(f"Local Chatterbox generation failed: {e}")
+                logger.warning(f"Local Chatterbox generation failed: {e}, trying Gradio API...")
         
-        # Fall back to HuggingFace Spaces via Gradio client
-        if voice_path:
-            try:
-                return await self._generate_with_chatterbox_gradio(text, voice_path, exaggeration)
-            except Exception as e:
-                logger.warning(f"Gradio Chatterbox failed: {e}")
-        
-        logger.warning("Chatterbox free not available, falling back to edge-tts")
-        if EDGE_TTS_AVAILABLE:
-            return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
-        return self._synthesize_fallback(text)
+        # Try HuggingFace Spaces via Gradio client
+        return await self._generate_with_chatterbox_gradio(text, voice_path, exaggeration)
     
     async def _generate_with_chatterbox_paid(
         self,
@@ -277,6 +320,7 @@ class TTSService:
         """
         Generate audio using Chatterbox TTS via custom HuggingFace Space (Gradio API).
         Uses the /predict endpoint with (text, seed, voice_tuple) parameters.
+        Raises exceptions on failure (no fallbacks).
         """
         from chatterbox_config import CHATTERBOX_PAID_CONFIG, is_paid_chatterbox_configured
         from gradio_client import Client
@@ -284,14 +328,13 @@ class TTSService:
         import aiohttp
         
         if not is_paid_chatterbox_configured():
-            logger.warning("Chatterbox paid space not configured, falling back to free tier")
-            return await self._generate_with_chatterbox_free(text, voice_path, exaggeration)
+            raise RuntimeError("Chatterbox Paid is not configured. Please set CHATTERBOX_API_URL environment variable.")
         
-        if not voice_path or not os.path.exists(voice_path):
-            logger.warning(f"Voice file not found: {voice_path}, falling back to edge-tts")
-            if EDGE_TTS_AVAILABLE:
-                return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
-            return self._synthesize_fallback(text)
+        if not voice_path:
+            raise ValueError("Chatterbox Paid requires a voice sample. Please select a voice from the library or upload one.")
+        
+        if not os.path.exists(voice_path):
+            raise FileNotFoundError(f"Voice file not found: {voice_path}")
         
         config = CHATTERBOX_PAID_CONFIG
         
@@ -413,8 +456,7 @@ class TTSService:
         
         except Exception as e:
             logger.error(f"Chatterbox paid space failed: {e}")
-            logger.warning("Falling back to Chatterbox free tier")
-            return await self._generate_with_chatterbox_free(text, voice_path, exaggeration)
+            raise RuntimeError(f"Chatterbox Paid generation failed: {e}") from e
     
     async def _generate_with_chatterbox_gradio(
         self,
@@ -467,9 +509,13 @@ class TTSService:
             )
             return result
         
-        # Run synchronous Gradio call in thread pool
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, call_gradio)
+        try:
+            # Run synchronous Gradio call in thread pool
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, call_gradio)
+        except Exception as e:
+            logger.error(f"Chatterbox Gradio API call failed: {e}")
+            raise RuntimeError(f"Chatterbox Free generation failed (HuggingFace Space may be unavailable or quota exceeded): {e}") from e
         
         logger.info(f"Chatterbox Gradio result type: {type(result)}")
         
@@ -502,64 +548,53 @@ class TTSService:
         """
         Generate audio using OpenAI TTS API.
         Requires OPENAI_API_KEY environment variable.
-        Falls back to edge-tts if no API key is available.
+        Raises exceptions on failure (no fallbacks).
         """
-        try:
-            import httpx
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key:
-                logger.warning("OpenAI API key not found, falling back to edge-tts")
-                if EDGE_TTS_AVAILABLE:
-                    return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
-                return self._synthesize_fallback(text)
+        import httpx
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.openai.com/v1/audio/speech",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "tts-1",
+                    "input": text,
+                    "voice": voice,
+                    "response_format": "mp3",
+                },
+                timeout=60.0,
+            )
             
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.openai.com/v1/audio/speech",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": "tts-1",
-                        "input": text,
-                        "voice": voice,
-                        "response_format": "mp3",
-                    },
-                    timeout=60.0,
-                )
-                
-                if response.status_code != 200:
-                    logger.error(f"OpenAI TTS failed: {response.text}")
-                    return self._synthesize_fallback(text)
-                
-                return await self._mp3_bytes_to_numpy(response.content)
-        except Exception as e:
-            logger.error(f"OpenAI TTS error: {e}")
-            return self._synthesize_fallback(text)
+            if response.status_code != 200:
+                raise RuntimeError(f"OpenAI TTS API error (status {response.status_code}): {response.text}")
+            
+            return await self._mp3_bytes_to_numpy(response.content)
     
     async def _generate_with_piper(self, text: str, voice_path: Optional[str] = None) -> np.ndarray:
         """
         Generate audio using Piper TTS (open source, fast).
-        Falls back to edge-tts if Piper not installed.
+        Raises exceptions on failure (no fallbacks).
         """
+        import subprocess
+        import shutil
+        
+        if not shutil.which("piper"):
+            raise RuntimeError("Piper TTS is not installed. Please install it to use this engine.")
+        
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            output_path = f.name
+        
+        cmd = ["piper", "--output_file", output_path]
+        if voice_path:
+            cmd.extend(["--model", voice_path])
+        
         try:
-            import subprocess
-            import shutil
-            
-            if not shutil.which("piper"):
-                logger.warning("Piper not installed, falling back to edge-tts")
-                if EDGE_TTS_AVAILABLE:
-                    return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
-                return self._synthesize_fallback(text)
-            
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                output_path = f.name
-            
-            cmd = ["piper", "--output_file", output_path]
-            if voice_path:
-                cmd.extend(["--model", voice_path])
-            
             process = subprocess.run(
                 cmd,
                 input=text,
@@ -569,96 +604,78 @@ class TTSService:
             )
             
             if process.returncode != 0:
-                logger.warning(f"Piper TTS failed: {process.stderr}, falling back to edge-tts")
-                if EDGE_TTS_AVAILABLE:
-                    return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
-                return self._synthesize_fallback(text)
+                raise RuntimeError(f"Piper TTS generation failed: {process.stderr}")
             
             import soundfile as sf
             audio, sr = sf.read(output_path)
-            os.unlink(output_path)
             
             if sr != self.sample_rate:
                 from scipy import signal
                 audio = signal.resample(audio, int(len(audio) * self.sample_rate / sr))
             
             return audio.astype(np.float32)
-        except Exception as e:
-            logger.warning(f"Piper TTS error: {e}, falling back to edge-tts")
-            if EDGE_TTS_AVAILABLE:
-                return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
-            return self._synthesize_fallback(text)
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
     
     async def _generate_with_soprano(self, text: str) -> np.ndarray:
         """
         Generate audio using Soprano TTS (ekwek/Soprano-1.1-80M).
         Ultra-fast local model: 2000x real-time on GPU, 20x on CPU.
-        Falls back to edge-tts if Soprano fails.
+        Raises exceptions on failure (no fallbacks).
         """
-        try:
-            from soprano import SopranoTTS
-            import torch
+        from soprano import SopranoTTS
+        import torch
+        
+        loop = asyncio.get_running_loop()
+        
+        def generate_sync():
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            logger.info(f"Soprano TTS using device: {device}")
             
-            loop = asyncio.get_running_loop()
+            model = SopranoTTS(
+                backend='auto',
+                device=device,
+                cache_size_mb=100,
+            )
             
-            def generate_sync():
-                device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                logger.info(f"Soprano TTS using device: {device}")
-                
-                model = SopranoTTS(
-                    backend='auto',
-                    device=device,
-                    cache_size_mb=100,
-                )
-                
-                audio = model.infer(text)
-                
-                if isinstance(audio, torch.Tensor):
-                    audio = audio.cpu().numpy()
-                
-                if len(audio.shape) > 1:
-                    audio = audio.squeeze()
-                
-                return audio
+            audio = model.infer(text)
             
-            audio = await loop.run_in_executor(None, generate_sync)
+            if isinstance(audio, torch.Tensor):
+                audio = audio.cpu().numpy()
             
-            soprano_sr = 32000
-            if soprano_sr != self.sample_rate:
-                from scipy import signal
-                audio = signal.resample(audio, int(len(audio) * self.sample_rate / soprano_sr))
+            if len(audio.shape) > 1:
+                audio = audio.squeeze()
             
-            logger.info(f"Soprano TTS generated {len(audio)/self.sample_rate:.2f}s of audio")
-            return audio.astype(np.float32)
-            
-        except Exception as e:
-            logger.warning(f"Soprano TTS error: {e}, falling back to edge-tts")
-            if EDGE_TTS_AVAILABLE:
-                return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
-            return self._synthesize_fallback(text)
+            return audio
+        
+        audio = await loop.run_in_executor(None, generate_sync)
+        
+        soprano_sr = 32000
+        if soprano_sr != self.sample_rate:
+            from scipy import signal
+            audio = signal.resample(audio, int(len(audio) * self.sample_rate / soprano_sr))
+        
+        logger.info(f"Soprano TTS generated {len(audio)/self.sample_rate:.2f}s of audio")
+        return audio.astype(np.float32)
     
     async def _generate_with_edge_tts(self, text: str, voice: str = "en-US-AriaNeural") -> np.ndarray:
         """
         Generate audio using edge-tts (Microsoft Azure Neural TTS).
+        Raises exceptions on failure (no fallbacks).
         """
-        try:
-            communicate = edge_tts.Communicate(text, voice)
-            
-            audio_data = b""
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_data += chunk["data"]
-            
-            if not audio_data:
-                logger.warning("edge-tts returned empty audio")
-                return self._synthesize_fallback(text)
-            
-            audio_array = await self._mp3_bytes_to_numpy(audio_data)
-            return audio_array
-            
-        except Exception as e:
-            logger.error(f"edge-tts generation failed: {e}")
-            return self._synthesize_fallback(text)
+        communicate = edge_tts.Communicate(text, voice)
+        
+        audio_data = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data += chunk["data"]
+        
+        if not audio_data:
+            raise RuntimeError(f"edge-tts returned empty audio for voice '{voice}'")
+        
+        audio_array = await self._mp3_bytes_to_numpy(audio_data)
+        return audio_array
     
     async def _mp3_bytes_to_numpy(self, mp3_data: bytes) -> np.ndarray:
         """

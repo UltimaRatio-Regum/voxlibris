@@ -129,13 +129,18 @@ Or use the combined start script:
 
 ## Recent Changes
 
-- **2026-01-26**: Added Soprano TTS and bug fixes
+- **2026-01-26**: TTS engine improvements and strict error handling
+  - **Removed all fallback chains**: Each TTS engine now throws exceptions on failure instead of silently falling back
+    - Provides clearer error messages to users when a specific engine fails
+    - Ensures users know exactly which engine they're using
+  - **Chatterbox emotion-based exaggeration**: Dynamically adjusts exaggeration parameter per segment based on detected sentiment
+    - Maps emotions like "excited" (0.9), "angry" (0.85), "calm" (0.4) to exaggeration values
+    - Blends target exaggeration with base config based on sentiment confidence score
   - **Soprano TTS** (ekwek/Soprano-1.1-80M): Ultra-fast local TTS with 80M parameters
     - 2000x real-time on GPU, 20x on CPU
     - 32kHz audio output, resampled to 24kHz for consistency
-    - Falls back to edge-tts if Soprano fails
+    - Note: Soprano does not support voice cloning (speed-optimized only)
   - Fixed Chatterbox Paid import error (relative → absolute import)
-  - Fixed OpenAI TTS to fallback to edge-tts instead of sine wave tones when no API key
 - **2026-01-26**: LLM parsing chunk optimization
   - Reduced batch size from 10 paragraphs to 2-3 paragraphs per LLM call
   - Quote-aware splitting prevents mid-dialogue cuts (tracks straight quotes via parity, curly quotes via balance)
