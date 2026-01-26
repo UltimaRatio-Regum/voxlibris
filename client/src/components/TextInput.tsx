@@ -55,7 +55,7 @@ export function TextInput({
   const [showSpeakerInput, setShowSpeakerInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const showProgress = isAnalyzing && parseTotalChunks > 0;
+  const showProgress = isAnalyzing;
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -200,13 +200,21 @@ export function TextInput({
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span>Analyzing text with AI...</span>
               </div>
-              <span className="text-muted-foreground">
-                Chunk {parseCurrentChunk} of {parseTotalChunks}
-              </span>
+              {parseTotalChunks > 0 ? (
+                <span className="text-muted-foreground">
+                  Chunk {parseCurrentChunk + 1} of {parseTotalChunks}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Preparing...
+                </span>
+              )}
             </div>
-            <Progress value={parseProgress} className="h-2" data-testid="progress-parse" />
+            <Progress value={parseTotalChunks > 0 ? parseProgress : undefined} className="h-2" data-testid="progress-parse" />
             <p className="text-xs text-muted-foreground">
-              Processing large text in chunks for better accuracy
+              {parseTotalChunks > 0 
+                ? "Processing text in chunks for better accuracy" 
+                : "Connecting to AI model..."}
             </p>
           </div>
         )}

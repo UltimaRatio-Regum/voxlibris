@@ -128,7 +128,16 @@ export async function registerRoutes(
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
       res.flushHeaders();
+      
+      // Helper to flush after each write
+      const sendSSE = (data: object) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+        if (typeof (res as any).flush === 'function') {
+          (res as any).flush();
+        }
+      };
 
       const speakers = Array.isArray(knownSpeakers) ? knownSpeakers : [];
       const streamGenerator = parseTextWithLLMStreaming(text, model, speakers);
@@ -139,17 +148,17 @@ export async function registerRoutes(
       
       for await (const update of streamGenerator) {
         if (update.type === 'error') {
-          res.write(`data: ${JSON.stringify({ type: 'error', error: update.error })}\n\n`);
+          sendSSE({ type: 'error', error: update.error });
           res.end();
           return;
         }
         
         if (update.type === 'progress') {
-          res.write(`data: ${JSON.stringify({ 
+          sendSSE({ 
             type: 'progress', 
             chunkIndex: update.chunkIndex, 
             totalChunks: update.totalChunks 
-          })}\n\n`);
+          });
         }
         
         if (update.type === 'chunk' && update.segments) {
@@ -179,21 +188,21 @@ export async function registerRoutes(
           allSegments.push(...processedSegments);
           allSpeakers = update.detectedSpeakers || [];
           
-          res.write(`data: ${JSON.stringify({ 
+          sendSSE({ 
             type: 'chunk', 
             chunkIndex: update.chunkIndex, 
             totalChunks: update.totalChunks,
             segments: processedSegments,
             detectedSpeakers: allSpeakers
-          })}\n\n`);
+          });
         }
         
         if (update.type === 'complete') {
-          res.write(`data: ${JSON.stringify({ 
+          sendSSE({ 
             type: 'complete', 
             totalSegments: allSegments.length,
             detectedSpeakers: allSpeakers
-          })}\n\n`);
+          });
         }
       }
       
