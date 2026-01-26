@@ -214,8 +214,10 @@ class TTSService:
         Generate audio for a single text segment.
         Dispatches to the appropriate TTS engine based on config.
         """
-        if tts_engine == "chatterbox":
-            return await self._generate_with_chatterbox(text, voice_path, exaggeration)
+        if tts_engine == "chatterbox-free":
+            return await self._generate_with_chatterbox_free(text, voice_path, exaggeration)
+        elif tts_engine == "chatterbox-paid":
+            return await self._generate_with_chatterbox_paid(text, voice_path, exaggeration)
         elif tts_engine == "openai":
             # Use passed openai_voice, fallback to default if invalid
             voice = OPENAI_TTS_VOICES.get(openai_voice, OPENAI_TTS_VOICES["default"]) if openai_voice else "alloy"
@@ -227,14 +229,14 @@ class TTSService:
                 return await self._generate_with_edge_tts(text, edge_voice or "en-US-AriaNeural")
             return self._synthesize_fallback(text)
     
-    async def _generate_with_chatterbox(
+    async def _generate_with_chatterbox_free(
         self,
         text: str,
         voice_path: Optional[str] = None,
         exaggeration: float = 0.5,
     ) -> np.ndarray:
         """
-        Generate audio using Chatterbox TTS (voice cloning).
+        Generate audio using Chatterbox TTS via free HuggingFace Spaces.
         Tries local GPU model first, then falls back to HuggingFace Spaces via Gradio.
         """
         # Try local Chatterbox with CUDA first
@@ -256,10 +258,110 @@ class TTSService:
             except Exception as e:
                 logger.warning(f"Gradio Chatterbox failed: {e}")
         
-        logger.warning("Chatterbox not available, falling back to edge-tts")
+        logger.warning("Chatterbox free not available, falling back to edge-tts")
         if EDGE_TTS_AVAILABLE:
             return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
         return self._synthesize_fallback(text)
+    
+    async def _generate_with_chatterbox_paid(
+        self,
+        text: str,
+        voice_path: Optional[str] = None,
+        exaggeration: float = 0.5,
+    ) -> np.ndarray:
+        """
+        Generate audio using Chatterbox TTS via paid custom API endpoint.
+        Requires CHATTERBOX_API_URL and CHATTERBOX_API_KEY environment variables.
+        """
+        from .chatterbox_config import CHATTERBOX_PAID_CONFIG, is_paid_chatterbox_configured
+        import aiohttp
+        import base64
+        
+        if not is_paid_chatterbox_configured():
+            logger.warning("Chatterbox paid API not configured, falling back to free tier")
+            return await self._generate_with_chatterbox_free(text, voice_path, exaggeration)
+        
+        if not voice_path or not os.path.exists(voice_path):
+            logger.warning(f"Voice file not found: {voice_path}, falling back to edge-tts")
+            if EDGE_TTS_AVAILABLE:
+                return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
+            return self._synthesize_fallback(text)
+        
+        config = CHATTERBOX_PAID_CONFIG
+        
+        # Apply character limit if configured
+        if config["max_chars"] > 0 and len(text) > config["max_chars"]:
+            truncated = text[:config["max_chars"]]
+            last_space = truncated.rfind(' ')
+            if last_space > config["max_chars"] * 0.6:
+                truncated = truncated[:last_space]
+            text = truncated
+            logger.warning(f"Text truncated to {len(text)} characters for Chatterbox paid")
+        
+        try:
+            # Read voice file and encode as base64
+            with open(voice_path, 'rb') as f:
+                voice_data = base64.b64encode(f.read()).decode('utf-8')
+            
+            # Prepare request payload
+            payload = {
+                "text": text,
+                "audio_prompt": voice_data,
+                "exaggeration": exaggeration,
+                "temperature": config["default_temperature"],
+                "cfg_weight": config["default_cfg_weight"],
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {config['api_key']}",
+                "Content-Type": "application/json",
+            }
+            
+            logger.info(f"Calling Chatterbox paid API: {config['api_url']}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    config["api_url"],
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=config["timeout"])
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(f"Chatterbox paid API error: {response.status} - {error_text}")
+                    
+                    # Expect audio data in response (WAV or raw PCM)
+                    content_type = response.headers.get("Content-Type", "")
+                    
+                    if "audio" in content_type or "octet-stream" in content_type:
+                        # Binary audio response
+                        audio_data = await response.read()
+                        import io
+                        import soundfile as sf
+                        audio, sr = sf.read(io.BytesIO(audio_data))
+                        if sr != self.sample_rate:
+                            import scipy.signal as signal
+                            audio = signal.resample(audio, int(len(audio) * self.sample_rate / sr))
+                        return audio.astype(np.float32)
+                    else:
+                        # JSON response with base64 audio
+                        data = await response.json()
+                        if "audio" in data:
+                            audio_bytes = base64.b64decode(data["audio"])
+                            import io
+                            import soundfile as sf
+                            audio, sr = sf.read(io.BytesIO(audio_bytes))
+                            if sr != self.sample_rate:
+                                import scipy.signal as signal
+                                audio = signal.resample(audio, int(len(audio) * self.sample_rate / sr))
+                            return audio.astype(np.float32)
+                        else:
+                            raise Exception("Unexpected response format from Chatterbox paid API")
+        
+        except Exception as e:
+            logger.error(f"Chatterbox paid API failed: {e}")
+            logger.warning("Falling back to Chatterbox free tier")
+            return await self._generate_with_chatterbox_free(text, voice_path, exaggeration)
     
     async def _generate_with_chatterbox_gradio(
         self,

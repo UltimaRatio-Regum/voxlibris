@@ -36,11 +36,18 @@ const TTS_ENGINES: TTSEngineOption[] = [
     badgeVariant: "secondary",
   },
   {
-    id: "chatterbox",
-    name: "Chatterbox (Voice Cloning)",
-    description: "Clone any voice from samples, external endpoint",
-    badge: "Cloning",
+    id: "chatterbox-free",
+    name: "Chatterbox Free (HuggingFace)",
+    description: "Voice cloning via free HuggingFace Spaces, 300 char limit",
+    badge: "Free",
     badgeVariant: "outline",
+  },
+  {
+    id: "chatterbox-paid",
+    name: "Chatterbox Paid (Custom API)",
+    description: "Voice cloning via custom endpoint, no char limit",
+    badge: "API Key",
+    badgeVariant: "secondary",
   },
   {
     id: "piper",

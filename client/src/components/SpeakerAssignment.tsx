@@ -42,7 +42,7 @@ export function SpeakerAssignment({
   const renderVoiceOptions = () => {
     const showEdgeVoices = ttsEngine === "edge-tts" && edgeVoices.length > 0;
     const showOpenaiVoices = ttsEngine === "openai" && openaiVoices.length > 0;
-    const showLibraryVoices = ttsEngine === "chatterbox" && libraryVoices.length > 0;
+    const showLibraryVoices = (ttsEngine === "chatterbox-free" || ttsEngine === "chatterbox-paid") && libraryVoices.length > 0;
     
     return (
       <>

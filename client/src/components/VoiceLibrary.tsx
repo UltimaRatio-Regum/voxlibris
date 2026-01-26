@@ -68,7 +68,7 @@ export function VoiceLibrary({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const showClonableVoices = ttsEngine === "chatterbox";
+  const showClonableVoices = ttsEngine === "chatterbox-free" || ttsEngine === "chatterbox-paid";
   const showEdgeVoices = ttsEngine === "edge-tts";
   const showOpenaiVoices = ttsEngine === "openai";
 

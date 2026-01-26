@@ -2,10 +2,11 @@ import { z } from "zod";
 
 // TTS Engine types
 export const ttsEngineSchema = z.enum([
-  "edge-tts",      // Microsoft Azure Neural TTS - free, 300+ voices
-  "openai",        // OpenAI TTS - requires API key
-  "chatterbox",    // Chatterbox TTS - voice cloning (external endpoint)
-  "piper",         // Piper TTS - open source, fast, local
+  "edge-tts",          // Microsoft Azure Neural TTS - free, 300+ voices
+  "openai",            // OpenAI TTS - requires API key
+  "chatterbox-free",   // Chatterbox TTS - free HuggingFace Spaces API
+  "chatterbox-paid",   // Chatterbox TTS - paid custom API endpoint
+  "piper",             // Piper TTS - open source, fast, local
 ]);
 
 export type TTSEngine = z.infer<typeof ttsEngineSchema>;
