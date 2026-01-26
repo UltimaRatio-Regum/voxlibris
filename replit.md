@@ -4,6 +4,7 @@
 
 A web application that converts plain text into expressive audiobooks using AI-powered text-to-speech with:
 - **edge-tts** for high-quality neural TTS (300+ voices, works without GPU)
+- **Soprano TTS** for ultra-fast local generation (80M model, 2000x real-time on GPU)
 - Voice cloning via Chatterbox TTS (when GPU available, or via external FastAPI endpoint)
 - Sentiment-based pitch and speed adjustments using pyrubberband
 - Automatic dialogue/narration separation
@@ -128,6 +129,13 @@ Or use the combined start script:
 
 ## Recent Changes
 
+- **2026-01-26**: Added Soprano TTS and bug fixes
+  - **Soprano TTS** (ekwek/Soprano-1.1-80M): Ultra-fast local TTS with 80M parameters
+    - 2000x real-time on GPU, 20x on CPU
+    - 32kHz audio output, resampled to 24kHz for consistency
+    - Falls back to edge-tts if Soprano fails
+  - Fixed Chatterbox Paid import error (relative → absolute import)
+  - Fixed OpenAI TTS to fallback to edge-tts instead of sine wave tones when no API key
 - **2026-01-26**: LLM parsing chunk optimization
   - Reduced batch size from 10 paragraphs to 2-3 paragraphs per LLM call
   - Quote-aware splitting prevents mid-dialogue cuts (tracks straight quotes via parity, curly quotes via balance)
