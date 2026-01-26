@@ -227,6 +227,8 @@ class TTSService:
             return await self._generate_with_openai(text, voice)
         elif tts_engine == "piper":
             return await self._generate_with_piper(text, voice_path)
+        elif tts_engine == "soprano":
+            return await self._generate_with_soprano(text)
         else:  # edge-tts (default)
             if EDGE_TTS_AVAILABLE:
                 return await self._generate_with_edge_tts(text, edge_voice or "en-US-AriaNeural")
@@ -276,7 +278,7 @@ class TTSService:
         Generate audio using Chatterbox TTS via custom HuggingFace Space (Gradio API).
         Uses the /predict endpoint with (text, seed, voice_tuple) parameters.
         """
-        from .chatterbox_config import CHATTERBOX_PAID_CONFIG, is_paid_chatterbox_configured
+        from chatterbox_config import CHATTERBOX_PAID_CONFIG, is_paid_chatterbox_configured
         from gradio_client import Client
         import soundfile as sf
         import aiohttp
@@ -500,12 +502,15 @@ class TTSService:
         """
         Generate audio using OpenAI TTS API.
         Requires OPENAI_API_KEY environment variable.
+        Falls back to edge-tts if no API key is available.
         """
         try:
             import httpx
             api_key = os.environ.get("OPENAI_API_KEY")
             if not api_key:
-                logger.warning("OpenAI API key not found, using fallback")
+                logger.warning("OpenAI API key not found, falling back to edge-tts")
+                if EDGE_TTS_AVAILABLE:
+                    return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
                 return self._synthesize_fallback(text)
             
             async with httpx.AsyncClient() as client:
@@ -580,6 +585,54 @@ class TTSService:
             return audio.astype(np.float32)
         except Exception as e:
             logger.warning(f"Piper TTS error: {e}, falling back to edge-tts")
+            if EDGE_TTS_AVAILABLE:
+                return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
+            return self._synthesize_fallback(text)
+    
+    async def _generate_with_soprano(self, text: str) -> np.ndarray:
+        """
+        Generate audio using Soprano TTS (ekwek/Soprano-1.1-80M).
+        Ultra-fast local model: 2000x real-time on GPU, 20x on CPU.
+        Falls back to edge-tts if Soprano fails.
+        """
+        try:
+            from soprano import SopranoTTS
+            import torch
+            
+            loop = asyncio.get_running_loop()
+            
+            def generate_sync():
+                device = 'cuda' if torch.cuda.is_available() else 'cpu'
+                logger.info(f"Soprano TTS using device: {device}")
+                
+                model = SopranoTTS(
+                    backend='auto',
+                    device=device,
+                    cache_size_mb=100,
+                )
+                
+                audio = model.infer(text)
+                
+                if isinstance(audio, torch.Tensor):
+                    audio = audio.cpu().numpy()
+                
+                if len(audio.shape) > 1:
+                    audio = audio.squeeze()
+                
+                return audio
+            
+            audio = await loop.run_in_executor(None, generate_sync)
+            
+            soprano_sr = 32000
+            if soprano_sr != self.sample_rate:
+                from scipy import signal
+                audio = signal.resample(audio, int(len(audio) * self.sample_rate / soprano_sr))
+            
+            logger.info(f"Soprano TTS generated {len(audio)/self.sample_rate:.2f}s of audio")
+            return audio.astype(np.float32)
+            
+        except Exception as e:
+            logger.warning(f"Soprano TTS error: {e}, falling back to edge-tts")
             if EDGE_TTS_AVAILABLE:
                 return await self._generate_with_edge_tts(text, EDGE_TTS_VOICES["default"])
             return self._synthesize_fallback(text)

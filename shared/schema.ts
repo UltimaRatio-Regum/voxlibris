@@ -7,6 +7,7 @@ export const ttsEngineSchema = z.enum([
   "chatterbox-free",   // Chatterbox TTS - free HuggingFace Spaces API
   "chatterbox-paid",   // Chatterbox TTS - paid custom API endpoint
   "piper",             // Piper TTS - open source, fast, local
+  "soprano",           // Soprano TTS - ultra-fast local 80M model
 ]);
 
 export type TTSEngine = z.infer<typeof ttsEngineSchema>;

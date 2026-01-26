@@ -58,6 +58,13 @@ const TTS_ENGINES: TTSEngineOption[] = [
     badge: "Local",
     badgeVariant: "outline",
   },
+  {
+    id: "soprano",
+    name: "Soprano TTS (80M)",
+    description: "Ultra-fast local TTS, 2000x real-time on GPU",
+    badge: "Local",
+    badgeVariant: "default",
+  },
 ];
 
 interface SettingsPanelProps {
