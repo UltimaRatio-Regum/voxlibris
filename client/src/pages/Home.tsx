@@ -170,7 +170,7 @@ export default function Home() {
     },
   });
 
-  // Generate audio mutation
+  // Generate audio mutation with streaming progress
   const generateAudioMutation = useMutation({
     mutationFn: async () => {
       setGenerationStatus("processing");
@@ -179,18 +179,83 @@ export default function Home() {
       setTotalSegments(segments.length);
       setStatusMessage("Starting audio generation...");
 
-      const response = await apiRequest("POST", "/api/generate", {
-        segments,
-        config: {
-          narratorVoiceId,
-          defaultExaggeration: exaggeration,
-          pauseBetweenSegments: pauseDuration,
-          speakers: speakerConfigs,
-          ttsEngine,
-        },
+      // Use streaming endpoint for real-time progress
+      const response = await fetch('/api/generate-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          segments,
+          config: {
+            narratorVoiceId,
+            defaultExaggeration: exaggeration,
+            pauseBetweenSegments: pauseDuration,
+            speakers: speakerConfigs,
+            ttsEngine,
+          },
+        }),
       });
 
-      return await response.json() as { audioUrl: string };
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to generate audio');
+      }
+
+      // Handle SSE stream
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('No response body');
+      }
+      
+      let buffer = '';
+      let audioUrl = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Process complete SSE messages
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'start') {
+                setTotalSegments(data.total);
+                setStatusMessage(`Generating ${data.total} audio segments...`);
+              }
+              
+              if (data.type === 'progress') {
+                setCurrentSegment(data.current);
+                setProgress(data.percent);
+                setStatusMessage(data.message);
+              }
+              
+              if (data.type === 'complete') {
+                audioUrl = data.audioUrl;
+              }
+              
+              if (data.type === 'error') {
+                throw new Error(data.error);
+              }
+            } catch (parseError) {
+              if (parseError instanceof SyntaxError) {
+                console.warn('Invalid SSE JSON:', line);
+              } else {
+                throw parseError;
+              }
+            }
+          }
+        }
+      }
+
+      return { audioUrl };
     },
     onSuccess: (data) => {
       setAudioUrl(data.audioUrl);
@@ -518,6 +583,9 @@ export default function Home() {
                 speakers={detectedSpeakers}
                 voiceSamples={voiceSamples}
                 libraryVoices={libraryVoices}
+                edgeVoices={edgeVoices}
+                openaiVoices={openaiVoices}
+                ttsEngine={ttsEngine}
                 speakerConfigs={speakerConfigs}
                 narratorVoiceId={narratorVoiceId}
                 onUpdateSpeakerConfig={handleUpdateSpeakerConfig}

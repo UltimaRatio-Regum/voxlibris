@@ -102,6 +102,7 @@ class TTSService:
             pitch_offset = 0.0
             speed_factor = 1.0
             edge_voice = self.edge_voice
+            openai_voice = "alloy"
             
             if segment.type == "dialogue" and segment.speaker:
                 speaker_config = config.speakers.get(segment.speaker)
@@ -109,19 +110,33 @@ class TTSService:
                     voice_id = speaker_config.voiceSampleId
                     pitch_offset = speaker_config.pitchOffset
                     speed_factor = speaker_config.speedFactor
-                    if voice_id and voice_id.startswith("edge_"):
-                        edge_voice = EDGE_TTS_VOICES.get(voice_id.replace("edge_", ""), self.edge_voice)
             else:
                 voice_id = config.narratorVoiceId
-                if voice_id and voice_id.startswith("edge_"):
-                    edge_voice = EDGE_TTS_VOICES.get(voice_id.replace("edge_", ""), EDGE_TTS_VOICES["narrator"])
             
-            voice_path = voice_files.get(voice_id) if voice_id and not voice_id.startswith("edge_") else None
+            # Parse voice ID prefixes for different TTS engines
+            voice_path = None
+            if voice_id:
+                if voice_id.startswith("edge:"):
+                    # Azure neural voice (e.g., "edge:en-US-AriaNeural")
+                    edge_voice = voice_id.replace("edge:", "")
+                elif voice_id.startswith("openai:"):
+                    # OpenAI voice (e.g., "openai:alloy")
+                    openai_voice = voice_id.replace("openai:", "")
+                elif voice_id.startswith("library:"):
+                    # Voice library sample for Chatterbox
+                    voice_path = voice_files.get(voice_id)
+                elif voice_id.startswith("edge_"):
+                    # Legacy format
+                    edge_voice = EDGE_TTS_VOICES.get(voice_id.replace("edge_", ""), self.edge_voice)
+                elif voice_id != "none":
+                    # Uploaded voice sample
+                    voice_path = voice_files.get(voice_id)
             
             audio = await self._generate_segment_audio_async(
                 text=segment.text,
                 voice_path=voice_path,
                 edge_voice=edge_voice if config.ttsEngine == "edge-tts" else None,
+                openai_voice=openai_voice if config.ttsEngine == "openai" else None,
                 exaggeration=config.defaultExaggeration,
                 tts_engine=config.ttsEngine,
             )
@@ -141,6 +156,15 @@ class TTSService:
                     audio = audio_processor.apply_pitch_shift(audio, self.sample_rate, pitch_offset)
                 if speed_factor != 1.0:
                     audio = audio_processor.apply_time_stretch(audio, self.sample_rate, speed_factor)
+            
+            # Trim trailing silence from each chunk to prevent gaps
+            audio = audio_processor.trim_trailing_silence(
+                audio, 
+                self.sample_rate,
+                block_ms=50,
+                silence_threshold=0.01,
+                min_silence_duration_ms=500,
+            )
             
             audio_chunks.append(audio)
         
@@ -182,6 +206,7 @@ class TTSService:
         text: str,
         voice_path: Optional[str] = None,
         edge_voice: Optional[str] = "en-US-AriaNeural",
+        openai_voice: Optional[str] = "alloy",
         exaggeration: float = 0.5,
         tts_engine: str = "edge-tts",
     ) -> np.ndarray:
@@ -192,8 +217,9 @@ class TTSService:
         if tts_engine == "chatterbox":
             return await self._generate_with_chatterbox(text, voice_path, exaggeration)
         elif tts_engine == "openai":
-            openai_voice = OPENAI_TTS_VOICES.get(edge_voice, OPENAI_TTS_VOICES["default"]) if edge_voice else "alloy"
-            return await self._generate_with_openai(text, openai_voice)
+            # Use passed openai_voice, fallback to default if invalid
+            voice = OPENAI_TTS_VOICES.get(openai_voice, OPENAI_TTS_VOICES["default"]) if openai_voice else "alloy"
+            return await self._generate_with_openai(text, voice)
         elif tts_engine == "piper":
             return await self._generate_with_piper(text, voice_path)
         else:  # edge-tts (default)

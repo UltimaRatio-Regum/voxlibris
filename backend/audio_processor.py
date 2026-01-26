@@ -240,3 +240,79 @@ class AudioProcessor:
         """Create silence of specified duration."""
         num_samples = int(sample_rate * duration_ms / 1000)
         return np.zeros(num_samples, dtype=np.float32)
+    
+    def trim_trailing_silence(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int,
+        block_ms: int = 50,
+        silence_threshold: float = 0.01,
+        min_silence_duration_ms: int = 500,
+    ) -> np.ndarray:
+        """
+        Trim trailing silence from audio data.
+        
+        Uses a sliding window to detect contiguous blocks of near-silence
+        (low mean and low variance) at the end of the audio.
+        
+        Args:
+            audio_data: Audio samples as numpy array
+            sample_rate: Sample rate in Hz
+            block_ms: Block size in milliseconds for analysis (default 50ms)
+            silence_threshold: Max RMS amplitude to consider as silence (default 0.01)
+            min_silence_duration_ms: Minimum silence duration to trigger trimming (default 500ms)
+        
+        Returns:
+            Audio data with trailing silence removed
+        """
+        if len(audio_data) == 0:
+            return audio_data
+        
+        # Convert to mono if stereo
+        if len(audio_data.shape) > 1:
+            audio_data = np.mean(audio_data, axis=1)
+        
+        block_samples = int(sample_rate * block_ms / 1000)
+        min_silence_samples = int(sample_rate * min_silence_duration_ms / 1000)
+        min_silence_blocks = max(1, min_silence_samples // block_samples)
+        
+        total_blocks = len(audio_data) // block_samples
+        if total_blocks == 0:
+            return audio_data
+        
+        # Analyze blocks from the end
+        silence_start_block = None
+        consecutive_silence = 0
+        
+        for i in range(total_blocks - 1, -1, -1):
+            start_idx = i * block_samples
+            end_idx = min(start_idx + block_samples, len(audio_data))
+            block = audio_data[start_idx:end_idx]
+            
+            # Calculate RMS (root mean square) for the block
+            rms = np.sqrt(np.mean(block ** 2))
+            
+            # Check if this block is silence
+            is_silence = rms < silence_threshold
+            
+            if is_silence:
+                consecutive_silence += 1
+                silence_start_block = i
+            else:
+                # Found non-silence, check if we had enough silence after this
+                if consecutive_silence >= min_silence_blocks:
+                    # Trim from silence_start_block
+                    trim_point = silence_start_block * block_samples
+                    return audio_data[:trim_point].astype(np.float32)
+                else:
+                    # Not enough silence, keep everything
+                    return audio_data.astype(np.float32)
+        
+        # If we get here, the entire audio (or most of it) is silence
+        # Keep at least some audio if it exists
+        if consecutive_silence >= min_silence_blocks and silence_start_block is not None:
+            trim_point = silence_start_block * block_samples
+            if trim_point > 0:
+                return audio_data[:trim_point].astype(np.float32)
+        
+        return audio_data.astype(np.float32)

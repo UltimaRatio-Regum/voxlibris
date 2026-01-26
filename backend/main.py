@@ -311,6 +311,100 @@ async def generate_audio(request: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/generate-stream")
+async def generate_audio_stream(request: GenerateRequest):
+    """Generate audiobook with streaming progress updates via SSE"""
+    from starlette.responses import StreamingResponse
+    import json
+    import asyncio
+    
+    # Use asyncio.Queue for real-time progress updates
+    progress_queue: asyncio.Queue = asyncio.Queue()
+    
+    async def generate_audio_task():
+        try:
+            output_id = str(uuid.uuid4())
+            output_path = OUTPUT_DIR / f"{output_id}.wav"
+            
+            voice_files = {}
+            
+            # Add uploaded voice samples
+            for voice_id, sample in voice_samples.items():
+                voice_files[voice_id] = str(UPLOAD_DIR / sample.audioUrl.lstrip("/uploads/"))
+            
+            # Add library voices (with library: prefix)
+            if VOICE_LIBRARY_DIR.exists():
+                for wav_file in VOICE_LIBRARY_DIR.glob("*_mic1.wav"):
+                    voice_id = wav_file.stem.replace("_mic1", "")
+                    voice_files[f"library:{voice_id}"] = str(wav_file)
+            
+            # Progress callback that puts events in queue
+            def progress_callback(current: int, total: int, message: str):
+                asyncio.get_event_loop().call_soon_threadsafe(
+                    progress_queue.put_nowait,
+                    {
+                        'type': 'progress',
+                        'current': current + 1,
+                        'total': total,
+                        'percent': int((current + 1) / total * 100),
+                        'message': message
+                    }
+                )
+            
+            # Generate audio with progress tracking
+            await tts_service.generate_audiobook_async(
+                segments=request.segments,
+                config=request.config,
+                voice_files=voice_files,
+                output_path=str(output_path),
+                audio_processor=audio_processor,
+                progress_callback=progress_callback,
+            )
+            
+            # Signal completion
+            await progress_queue.put({
+                'type': 'complete', 
+                'audioUrl': f'/uploads/output/{output_id}.wav'
+            })
+            
+        except Exception as e:
+            logger.error(f"Stream generation error: {e}")
+            await progress_queue.put({'type': 'error', 'error': str(e)})
+    
+    async def generate_with_progress():
+        total_segments = len(request.segments)
+        
+        # Send initial progress
+        yield f"data: {json.dumps({'type': 'start', 'total': total_segments})}\n\n"
+        
+        # Start generation task
+        task = asyncio.create_task(generate_audio_task())
+        
+        # Stream progress events as they come in
+        while True:
+            try:
+                event = await asyncio.wait_for(progress_queue.get(), timeout=600.0)
+                yield f"data: {json.dumps(event)}\n\n"
+                
+                if event.get('type') in ('complete', 'error'):
+                    break
+            except asyncio.TimeoutError:
+                yield f"data: {json.dumps({'type': 'error', 'error': 'Generation timeout'})}\n\n"
+                break
+        
+        # Wait for task to complete
+        await task
+    
+    return StreamingResponse(
+        generate_with_progress(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

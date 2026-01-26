@@ -1,4 +1,4 @@
-import { Users, Mic, Volume2, Library } from "lucide-react";
+import { Users, Mic, Volume2, Library, Globe } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -12,12 +12,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { VoiceSample, SpeakerConfig, LibraryVoice } from "@shared/schema";
+import type { VoiceSample, SpeakerConfig, LibraryVoice, EdgeVoice, OpenAIVoice, TTSEngine } from "@shared/schema";
 
 interface SpeakerAssignmentProps {
   speakers: string[];
   voiceSamples: VoiceSample[];
   libraryVoices: LibraryVoice[];
+  edgeVoices: EdgeVoice[];
+  openaiVoices: OpenAIVoice[];
+  ttsEngine: TTSEngine;
   speakerConfigs: Record<string, SpeakerConfig>;
   narratorVoiceId: string | null;
   onUpdateSpeakerConfig: (speaker: string, config: Partial<SpeakerConfig>) => void;
@@ -28,48 +31,97 @@ export function SpeakerAssignment({
   speakers,
   voiceSamples,
   libraryVoices,
+  edgeVoices,
+  openaiVoices,
+  ttsEngine,
   speakerConfigs,
   narratorVoiceId,
   onUpdateSpeakerConfig,
   onUpdateNarratorVoice,
 }: SpeakerAssignmentProps) {
-  const renderVoiceOptions = () => (
-    <>
-      <SelectItem value="none">Default (No cloning)</SelectItem>
-      {voiceSamples.length > 0 && (
-        <SelectGroup>
-          <SelectLabel className="flex items-center gap-2">
-            <Mic className="h-3 w-3" />
-            Uploaded Voices
-          </SelectLabel>
-          {voiceSamples.map((sample) => (
-            <SelectItem key={sample.id} value={sample.id}>
-              <div className="flex items-center gap-2">
-                <Mic className="h-3 w-3" />
-                {sample.name}
-              </div>
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      )}
-      {libraryVoices.length > 0 && (
-        <SelectGroup>
-          <SelectLabel className="flex items-center gap-2">
-            <Library className="h-3 w-3" />
-            Voice Library
-          </SelectLabel>
-          {libraryVoices.map((voice) => (
-            <SelectItem key={voice.id} value={`library:${voice.id}`}>
-              <div className="flex items-center gap-2">
-                <Library className="h-3 w-3" />
-                {voice.name}
-              </div>
-            </SelectItem>
-          ))}
-        </SelectGroup>
-      )}
-    </>
-  );
+  const renderVoiceOptions = () => {
+    const showEdgeVoices = ttsEngine === "edge-tts" && edgeVoices.length > 0;
+    const showOpenaiVoices = ttsEngine === "openai" && openaiVoices.length > 0;
+    const showLibraryVoices = ttsEngine === "chatterbox" && libraryVoices.length > 0;
+    
+    return (
+      <>
+        <SelectItem value="none">Default (No cloning)</SelectItem>
+        
+        {showEdgeVoices && (
+          <SelectGroup>
+            <SelectLabel className="flex items-center gap-2">
+              <Globe className="h-3 w-3" />
+              Azure Neural Voices
+            </SelectLabel>
+            {edgeVoices.slice(0, 20).map((voice) => (
+              <SelectItem key={voice.id} value={`edge:${voice.id}`}>
+                <div className="flex items-center gap-2">
+                  <Globe className="h-3 w-3" />
+                  <span className="truncate max-w-[180px]">
+                    {voice.name.replace("Microsoft ", "").replace(" Online (Natural)", "")}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{voice.locale}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+        
+        {showOpenaiVoices && (
+          <SelectGroup>
+            <SelectLabel className="flex items-center gap-2">
+              <Mic className="h-3 w-3" />
+              OpenAI Voices
+            </SelectLabel>
+            {openaiVoices.map((voice) => (
+              <SelectItem key={voice.id} value={`openai:${voice.id}`}>
+                <div className="flex items-center gap-2">
+                  <Mic className="h-3 w-3" />
+                  <span>{voice.name}</span>
+                  <span className="text-xs text-muted-foreground">{voice.description}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+        
+        {voiceSamples.length > 0 && (
+          <SelectGroup>
+            <SelectLabel className="flex items-center gap-2">
+              <Mic className="h-3 w-3" />
+              Uploaded Voices
+            </SelectLabel>
+            {voiceSamples.map((sample) => (
+              <SelectItem key={sample.id} value={sample.id}>
+                <div className="flex items-center gap-2">
+                  <Mic className="h-3 w-3" />
+                  {sample.name}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+        
+        {showLibraryVoices && (
+          <SelectGroup>
+            <SelectLabel className="flex items-center gap-2">
+              <Library className="h-3 w-3" />
+              Voice Library (Chatterbox)
+            </SelectLabel>
+            {libraryVoices.map((voice) => (
+              <SelectItem key={voice.id} value={`library:${voice.id}`}>
+                <div className="flex items-center gap-2">
+                  <Library className="h-3 w-3" />
+                  {voice.name}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+      </>
+    );
+  };
   return (
     <Card>
       <CardHeader className="pb-3">
