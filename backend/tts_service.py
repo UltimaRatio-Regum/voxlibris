@@ -319,7 +319,7 @@ class TTSService:
     ) -> np.ndarray:
         """
         Generate audio using Chatterbox TTS via custom HuggingFace Space (Gradio API).
-        Uses the /predict endpoint with (text, seed, voice_tuple) parameters.
+        Uses the /run/predict endpoint with (text, seed, voice_reference_audio) parameters.
         Raises exceptions on failure (no fallbacks).
         """
         from chatterbox_config import CHATTERBOX_PAID_CONFIG, is_paid_chatterbox_configured
@@ -367,12 +367,12 @@ class TTSService:
                     client_kwargs["hf_token"] = api_key
                 
                 client = Client(space_url, **client_kwargs)
-                # Call predict with: text, seed (None), voice reference tuple (sr, audio_array)
+                # Call predict with: text, seed, voice_reference_audio
                 result = client.predict(
                     text,
                     None,  # seed (optional)
                     (sr, voice_audio),  # voice reference: (sample_rate, waveform array)
-                    api_name="/predict"
+                    api_name="/run/predict"
                 )
                 return result
             
