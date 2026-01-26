@@ -127,8 +127,10 @@ export function VoiceLibrary({
     switch (ttsEngine) {
       case "edge-tts":
         return "Microsoft Azure neural voices";
-      case "chatterbox":
-        return "Voice cloning samples";
+      case "chatterbox-free":
+        return "Voice cloning (HuggingFace free tier)";
+      case "chatterbox-paid":
+        return "Voice cloning (paid API)";
       case "openai":
         return "OpenAI TTS voices";
       case "piper":

@@ -214,7 +214,10 @@ class TTSService:
         Generate audio for a single text segment.
         Dispatches to the appropriate TTS engine based on config.
         """
-        if tts_engine == "chatterbox-free":
+        if tts_engine == "chatterbox-free" or tts_engine == "chatterbox":
+            # "chatterbox" is legacy, treat as chatterbox-free
+            if tts_engine == "chatterbox":
+                logger.info("Legacy 'chatterbox' engine mapped to 'chatterbox-free'")
             return await self._generate_with_chatterbox_free(text, voice_path, exaggeration)
         elif tts_engine == "chatterbox-paid":
             return await self._generate_with_chatterbox_paid(text, voice_path, exaggeration)

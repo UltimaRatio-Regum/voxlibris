@@ -262,6 +262,26 @@ async def get_openai_voices():
     }
 
 
+@app.get("/chatterbox-status")
+async def get_chatterbox_status():
+    """Get Chatterbox TTS configuration status"""
+    from chatterbox_config import is_paid_chatterbox_configured, CHATTERBOX_PAID_CONFIG, CHATTERBOX_FREE_CONFIG
+    
+    return {
+        "free": {
+            "available": True,
+            "space_id": CHATTERBOX_FREE_CONFIG["space_id"],
+            "max_chars": CHATTERBOX_FREE_CONFIG["max_chars"],
+        },
+        "paid": {
+            "configured": is_paid_chatterbox_configured(),
+            "api_url_set": bool(CHATTERBOX_PAID_CONFIG["api_url"]),
+            "api_key_set": bool(CHATTERBOX_PAID_CONFIG["api_key"]),
+            "max_chars": CHATTERBOX_PAID_CONFIG["max_chars"],
+        },
+    }
+
+
 @app.post("/parse-text")
 async def parse_text(request: ParseTextRequest):
     """Parse text into segments with sentiment analysis"""
