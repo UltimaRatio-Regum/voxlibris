@@ -3,7 +3,8 @@
 ## Overview
 
 A web application that converts plain text into expressive audiobooks using AI-powered text-to-speech with:
-- Voice cloning via Chatterbox TTS (when GPU available)
+- **edge-tts** for high-quality neural TTS (300+ voices, works without GPU)
+- Voice cloning via Chatterbox TTS (when GPU available, or via external FastAPI endpoint)
 - Sentiment-based pitch and speed adjustments using pyrubberband
 - Automatic dialogue/narration separation
 - Multi-speaker voice assignment
@@ -20,8 +21,8 @@ A web application that converts plain text into expressive audiobooks using AI-p
 
 ### Backend (Python + FastAPI)
 - **Framework**: FastAPI with uvicorn
-- **TTS Engine**: Chatterbox TTS (Resemble AI)
-- **Audio Processing**: pyrubberband for pitch/speed manipulation
+- **TTS Engine**: edge-tts (Microsoft Azure Neural TTS), with Chatterbox TTS fallback for voice cloning
+- **Audio Processing**: pyrubberband for pitch/speed manipulation, pydub for format conversion
 - **Sentiment Analysis**: TextBlob
 - **Audio I/O**: soundfile, numpy, scipy
 
@@ -60,6 +61,7 @@ A web application that converts plain text into expressive audiobooks using AI-p
 | POST | /api/voices/upload | Upload voice sample |
 | DELETE | /api/voices/:id | Delete voice sample |
 | GET | /api/voice-library | List pre-recorded library voices |
+| GET | /api/edge-voices | List available edge-tts neural voices |
 | POST | /api/parse-text | Parse text into segments |
 | POST | /api/generate | Generate audiobook |
 
@@ -125,6 +127,13 @@ Or use the combined start script:
 
 ## Recent Changes
 
+- **2026-01-26**: Integrated edge-tts as primary TTS engine
+  - Microsoft Azure Neural TTS with 300+ voices (47 English voices)
+  - Works without GPU, high-quality speech synthesis
+  - Automatic fallback from Chatterbox when not available
+  - New `/api/edge-voices` endpoint lists all available neural voices
+  - Preset voices for common use cases (narrator, male/female US/UK/AU)
+  - Ready for future Chatterbox FastAPI endpoint integration
 - **2026-01-25**: Major LLM parsing upgrade with ChatGPT and speaker confidence scores
   - Default model changed to ChatGPT 4o (via OpenRouter)
   - New JSON output format with speaker confidence scores (e.g., {"Shane": 0.95, "Ilya": 0.05})

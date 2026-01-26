@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from text_parser import TextParser
 from audio_processor import AudioProcessor
-from tts_service import TTSService
+from tts_service import TTSService, list_edge_voices, EDGE_TTS_VOICES
 from models import (
     VoiceSample,
     TextSegment,
@@ -232,6 +232,20 @@ async def get_voice_library():
     return voices
 
 
+@app.get("/edge-voices")
+async def get_edge_voices():
+    """Get all available edge-tts voices"""
+    try:
+        voices = await list_edge_voices()
+        return {
+            "voices": voices,
+            "presets": EDGE_TTS_VOICES,
+        }
+    except Exception as e:
+        logger.error(f"Failed to list edge-tts voices: {e}")
+        return {"voices": [], "presets": EDGE_TTS_VOICES}
+
+
 @app.post("/parse-text")
 async def parse_text(request: ParseTextRequest):
     """Parse text into segments with sentiment analysis"""
@@ -265,7 +279,7 @@ async def generate_audio(request: GenerateRequest):
                 voice_id = wav_file.stem.replace("_mic1", "")  # e.g., "p226"
                 voice_files[f"library:{voice_id}"] = str(wav_file)
         
-        tts_service.generate_audiobook(
+        await tts_service.generate_audiobook_async(
             segments=request.segments,
             config=request.config,
             voice_files=voice_files,
