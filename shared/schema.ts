@@ -14,6 +14,22 @@ export type VoiceSample = z.infer<typeof voiceSampleSchema>;
 export const insertVoiceSampleSchema = voiceSampleSchema.omit({ id: true, createdAt: true });
 export type InsertVoiceSample = z.infer<typeof insertVoiceSampleSchema>;
 
+// Voice library entry (pre-uploaded voice samples)
+export const libraryVoiceSchema = z.object({
+  id: z.string(),           // e.g., "p226"
+  name: z.string(),         // e.g., "Voice 226: M/22 Surrey, England"
+  gender: z.enum(["M", "F"]),
+  age: z.number(),
+  language: z.string(),     // e.g., "English", "Scottish"
+  location: z.string(),     // e.g., "Surrey", "Southern_England"
+  audioUrl: z.string(),     // URL to mic1 file
+  altAudioUrl: z.string().nullable(), // URL to mic2 file if available
+  transcript: z.string().nullable(),  // Text content of transcript
+  duration: z.number(),
+});
+
+export type LibraryVoice = z.infer<typeof libraryVoiceSchema>;
+
 // Text segment types
 export const segmentTypeEnum = z.enum(["narration", "dialogue"]);
 export type SegmentType = z.infer<typeof segmentTypeEnum>;

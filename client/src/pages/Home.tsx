@@ -7,13 +7,14 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { TextInput } from "@/components/TextInput";
 import { VoiceSampleManager } from "@/components/VoiceSampleManager";
+import { VoiceLibrary } from "@/components/VoiceLibrary";
 import { TextPreview } from "@/components/TextPreview";
 import { SpeakerAssignment } from "@/components/SpeakerAssignment";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse } from "@shared/schema";
+import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse, LibraryVoice } from "@shared/schema";
 
 export default function Home() {
   const { toast } = useToast();
@@ -52,6 +53,14 @@ export default function Home() {
   const { data: voiceSamples = [] } = useQuery<VoiceSample[]>({
     queryKey: ["/api/voices"],
   });
+
+  // Fetch voice library
+  const { data: libraryVoices = [], isLoading: isLibraryLoading } = useQuery<LibraryVoice[]>({
+    queryKey: ["/api/voice-library"],
+  });
+
+  // Selected library voice
+  const [selectedLibraryVoiceId, setSelectedLibraryVoiceId] = useState<string | null>(null);
 
   // Get detected speakers
   const detectedSpeakers = Array.from(new Set(segments.filter((s) => s.speaker).map((s) => s.speaker!)));
@@ -470,6 +479,13 @@ export default function Home() {
 
           {/* Right column: Voice samples, speaker assignment, settings */}
           <div className="flex flex-col gap-6">
+            <VoiceLibrary
+              voices={libraryVoices}
+              selectedId={selectedLibraryVoiceId}
+              onSelect={setSelectedLibraryVoiceId}
+              isLoading={isLibraryLoading}
+            />
+
             <VoiceSampleManager
               samples={voiceSamples}
               selectedId={selectedVoiceId}
@@ -482,6 +498,7 @@ export default function Home() {
               <SpeakerAssignment
                 speakers={detectedSpeakers}
                 voiceSamples={voiceSamples}
+                libraryVoices={libraryVoices}
                 speakerConfigs={speakerConfigs}
                 narratorVoiceId={narratorVoiceId}
                 onUpdateSpeakerConfig={handleUpdateSpeakerConfig}

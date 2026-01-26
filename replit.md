@@ -33,6 +33,7 @@ A web application that converts plain text into expressive audiobooks using AI-p
 │   │   ├── components/    # UI components
 │   │   │   ├── TextInput.tsx
 │   │   │   ├── VoiceSampleManager.tsx
+│   │   │   ├── VoiceLibrary.tsx
 │   │   │   ├── TextPreview.tsx
 │   │   │   ├── SpeakerAssignment.tsx
 │   │   │   ├── AudioPlayer.tsx
@@ -58,6 +59,7 @@ A web application that converts plain text into expressive audiobooks using AI-p
 | GET | /api/voices | List voice samples |
 | POST | /api/voices/upload | Upload voice sample |
 | DELETE | /api/voices/:id | Delete voice sample |
+| GET | /api/voice-library | List pre-recorded library voices |
 | POST | /api/parse-text | Parse text into segments |
 | POST | /api/generate | Generate audiobook |
 
@@ -90,6 +92,12 @@ A web application that converts plain text into expressive audiobooks using AI-p
    - Between words (last resort)
 
 4. **Voice Cloning**: Uses 7-20 second audio samples for voice cloning via Chatterbox
+
+5. **Voice Library**: Pre-uploaded voice samples from the VCTK corpus in `voice_samples/` folder:
+   - Format: `p{number}_mic1.wav` and `p{number}_mic2.wav` audio files
+   - Metadata in transcript files: `p{number}_{gender}_{age}_{language}_{location}.txt`
+   - Display format: "Voice 226: M/22 Surrey, England"
+   - Features: preview playback, search/filter by gender, role assignment
 
 ## Running the Application
 

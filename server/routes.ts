@@ -256,6 +256,13 @@ export async function registerRoutes(
   app.use('/uploads', createProxyMiddleware({
     target: PYTHON_BACKEND_URL,
     changeOrigin: true,
+    pathRewrite: (path, req) => '/uploads' + path,
+  }));
+
+  app.use('/voice_library', createProxyMiddleware({
+    target: PYTHON_BACKEND_URL,
+    changeOrigin: true,
+    pathRewrite: (path, req) => '/voice_library' + path,
   }));
 
   return httpServer;

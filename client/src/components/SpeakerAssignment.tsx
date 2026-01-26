@@ -1,4 +1,4 @@
-import { Users, Mic, Volume2 } from "lucide-react";
+import { Users, Mic, Volume2, Library } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -6,15 +6,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { VoiceSample, SpeakerConfig } from "@shared/schema";
+import type { VoiceSample, SpeakerConfig, LibraryVoice } from "@shared/schema";
 
 interface SpeakerAssignmentProps {
   speakers: string[];
   voiceSamples: VoiceSample[];
+  libraryVoices: LibraryVoice[];
   speakerConfigs: Record<string, SpeakerConfig>;
   narratorVoiceId: string | null;
   onUpdateSpeakerConfig: (speaker: string, config: Partial<SpeakerConfig>) => void;
@@ -24,11 +27,49 @@ interface SpeakerAssignmentProps {
 export function SpeakerAssignment({
   speakers,
   voiceSamples,
+  libraryVoices,
   speakerConfigs,
   narratorVoiceId,
   onUpdateSpeakerConfig,
   onUpdateNarratorVoice,
 }: SpeakerAssignmentProps) {
+  const renderVoiceOptions = () => (
+    <>
+      <SelectItem value="none">Default (No cloning)</SelectItem>
+      {voiceSamples.length > 0 && (
+        <SelectGroup>
+          <SelectLabel className="flex items-center gap-2">
+            <Mic className="h-3 w-3" />
+            Uploaded Voices
+          </SelectLabel>
+          {voiceSamples.map((sample) => (
+            <SelectItem key={sample.id} value={sample.id}>
+              <div className="flex items-center gap-2">
+                <Mic className="h-3 w-3" />
+                {sample.name}
+              </div>
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      )}
+      {libraryVoices.length > 0 && (
+        <SelectGroup>
+          <SelectLabel className="flex items-center gap-2">
+            <Library className="h-3 w-3" />
+            Voice Library
+          </SelectLabel>
+          {libraryVoices.map((voice) => (
+            <SelectItem key={voice.id} value={`library:${voice.id}`}>
+              <div className="flex items-center gap-2">
+                <Library className="h-3 w-3" />
+                {voice.name}
+              </div>
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      )}
+    </>
+  );
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -57,15 +98,7 @@ export function SpeakerAssignment({
                   <SelectValue placeholder="Select narrator voice" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Default (No cloning)</SelectItem>
-                  {voiceSamples.map((sample) => (
-                    <SelectItem key={sample.id} value={sample.id}>
-                      <div className="flex items-center gap-2">
-                        <Mic className="h-3 w-3" />
-                        {sample.name}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {renderVoiceOptions()}
                 </SelectContent>
               </Select>
             </div>
@@ -107,15 +140,7 @@ export function SpeakerAssignment({
                           <SelectValue placeholder="Select voice" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">Default (No cloning)</SelectItem>
-                          {voiceSamples.map((sample) => (
-                            <SelectItem key={sample.id} value={sample.id}>
-                              <div className="flex items-center gap-2">
-                                <Mic className="h-3 w-3" />
-                                {sample.name}
-                              </div>
-                            </SelectItem>
-                          ))}
+                          {renderVoiceOptions()}
                         </SelectContent>
                       </Select>
                     </div>
