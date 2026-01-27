@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE - Deep purple/violet theme for audio production aesthetic */
+/* LIGHT MODE - Blue theme for audio production aesthetic */
 :root {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
@@ -32,15 +32,15 @@
 
   --sidebar-border: 250 15% 88%;
 
-  --sidebar-primary: 262 83% 58%;
+  --sidebar-primary: 220 83% 58%;
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 262 60% 94%;
+  --sidebar-accent: 220 60% 94%;
 
-  --sidebar-accent-foreground: 262 80% 40%;
+  --sidebar-accent-foreground: 220 80% 40%;
 
-  --sidebar-ring: 262 83% 58%;
+  --sidebar-ring: 220 83% 58%;
 
   --popover: 0 0% 100%;
 
@@ -48,30 +48,30 @@
 
   --popover-border: 250 15% 88%;
 
-  --primary: 262 83% 58%;
+  --primary: 220 83% 58%;
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 250 20% 94%;
+  --secondary: 220 20% 94%;
 
-  --secondary-foreground: 250 25% 25%;
+  --secondary-foreground: 220 25% 25%;
 
-  --muted: 250 15% 94%;
+  --muted: 220 15% 94%;
 
-  --muted-foreground: 250 15% 45%;
+  --muted-foreground: 220 15% 45%;
 
-  --accent: 262 60% 94%;
+  --accent: 220 60% 94%;
 
-  --accent-foreground: 262 80% 40%;
+  --accent-foreground: 220 80% 40%;
 
   --destructive: 0 84% 60%;
 
   --destructive-foreground: 0 0% 100%;
 
-  --input: 250 15% 85%;
-  --ring: 262 83% 58%;
-  --chart-1: 262 83% 58%;
-  --chart-2: 280 70% 55%;
+  --input: 220 15% 85%;
+  --ring: 220 83% 58%;
+  --chart-1: 220 83% 58%;
+  --chart-2: 200 70% 55%;
   --chart-3: 200 80% 50%;
   --chart-4: 160 70% 45%;
   --chart-5: 40 90% 55%;
@@ -150,15 +150,15 @@
 
   --sidebar-border: 250 15% 15%;
 
-  --sidebar-primary: 262 83% 65%;
+  --sidebar-primary: 220 83% 65%;
 
   --sidebar-primary-foreground: 0 0% 100%;
 
-  --sidebar-accent: 262 40% 18%;
+  --sidebar-accent: 220 40% 18%;
 
-  --sidebar-accent-foreground: 262 70% 75%;
+  --sidebar-accent-foreground: 220 70% 75%;
 
-  --sidebar-ring: 262 83% 65%;
+  --sidebar-ring: 220 83% 65%;
 
   --popover: 250 20% 10%;
 
@@ -166,31 +166,31 @@
 
   --popover-border: 250 15% 18%;
 
-  --primary: 262 83% 65%;
+  --primary: 220 83% 65%;
 
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 250 15% 16%;
+  --secondary: 220 15% 16%;
 
-  --secondary-foreground: 250 10% 85%;
+  --secondary-foreground: 220 10% 85%;
 
-  --muted: 250 15% 14%;
+  --muted: 220 15% 14%;
 
-  --muted-foreground: 250 10% 55%;
+  --muted-foreground: 220 10% 55%;
 
-  --accent: 262 40% 20%;
+  --accent: 220 40% 20%;
 
-  --accent-foreground: 262 70% 80%;
+  --accent-foreground: 220 70% 80%;
 
   --destructive: 0 72% 55%;
 
   --destructive-foreground: 0 0% 100%;
 
   /* Used as the border around inputs. Dark mode: Should be a border that is light enough to have high contrast when rendered on a --card background. More contrast than standard --border */
-  --input: 250 15% 25%;
-  --ring: 262 83% 65%;
-  --chart-1: 262 83% 65%;
-  --chart-2: 280 70% 60%;
+  --input: 220 15% 25%;
+  --ring: 220 83% 65%;
+  --chart-1: 220 83% 65%;
+  --chart-2: 200 70% 60%;
   --chart-3: 200 80% 55%;
   --chart-4: 160 70% 50%;
   --chart-5: 40 90% 60%;
