@@ -14,6 +14,7 @@ import { AudioPlayer } from "@/components/AudioPlayer";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { JobsPanel } from "@/components/JobsPanel";
 import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse, LibraryVoice, TTSEngine, EdgeVoice, OpenAIVoice } from "@shared/schema";
 
 export default function Home() {
@@ -177,94 +178,36 @@ export default function Home() {
       setProgress(0);
       setCurrentSegment(0);
       setTotalSegments(segments.length);
-      setStatusMessage("Starting audio generation...");
+      setStatusMessage("Creating audio generation job...");
 
-      // Use streaming endpoint for real-time progress
-      const response = await fetch('/api/generate-stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          segments,
-          config: {
-            narratorVoiceId,
-            defaultExaggeration: exaggeration,
-            pauseBetweenSegments: pauseDuration,
-            speakers: speakerConfigs,
-            ttsEngine,
-          },
-        }),
+      const response = await apiRequest('POST', '/api/jobs', {
+        title: inputText.slice(0, 50) || "Untitled Audiobook",
+        segments: segments.map(s => ({
+          id: s.id,
+          text: s.text,
+          type: s.type,
+          speaker: s.speaker,
+          sentiment: s.sentiment,
+        })),
+        config: {
+          narratorVoiceId,
+          defaultExaggeration: exaggeration,
+          pauseBetweenSegments: pauseDuration,
+          speakers: speakerConfigs,
+          ttsEngine,
+        },
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to generate audio');
-      }
-
-      // Handle SSE stream
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      
-      if (!reader) {
-        throw new Error('No response body');
-      }
-      
-      let buffer = '';
-      let audioUrl = '';
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        
-        // Process complete SSE messages
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.type === 'start') {
-                setTotalSegments(data.total);
-                setStatusMessage(`Generating ${data.total} audio segments...`);
-              }
-              
-              if (data.type === 'progress') {
-                setCurrentSegment(data.current);
-                setProgress(data.percent);
-                setStatusMessage(data.message);
-              }
-              
-              if (data.type === 'complete') {
-                audioUrl = data.audioUrl;
-              }
-              
-              if (data.type === 'error') {
-                throw new Error(data.error);
-              }
-            } catch (parseError) {
-              if (parseError instanceof SyntaxError) {
-                console.warn('Invalid SSE JSON:', line);
-              } else {
-                throw parseError;
-              }
-            }
-          }
-        }
-      }
-
-      return { audioUrl };
+      const data = await response.json();
+      return { jobId: data.jobId };
     },
     onSuccess: (data) => {
-      setAudioUrl(data.audioUrl);
-      setGenerationStatus("completed");
-      setProgress(100);
-      setStatusMessage("Audio generation complete!");
+      setGenerationStatus("idle");
+      setStatusMessage("");
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       toast({
-        title: "Audiobook ready",
-        description: "Your audiobook has been generated successfully",
+        title: "Generation started",
+        description: "Your audiobook is being generated in the background. Check the Jobs panel for progress.",
       });
     },
     onError: (error: Error) => {
@@ -601,6 +544,8 @@ export default function Home() {
               onPauseDurationChange={setPauseDuration}
               onTTSEngineChange={setTTSEngine}
             />
+
+            <JobsPanel />
           </div>
         </div>
 

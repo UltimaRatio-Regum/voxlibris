@@ -428,11 +428,18 @@ async def generate_audio_stream(request: GenerateRequest):
 from database import init_database
 from job_manager import (
     create_job, get_job, get_all_jobs, get_job_segments, 
-    get_segment_audio, cancel_job, delete_job
+    get_segment_audio, cancel_job, delete_job, run_cleanup_loop
 )
 from job_runner import start_job_async
 
 init_database()
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Run cleanup loop on startup."""
+    import asyncio
+    asyncio.create_task(run_cleanup_loop())
 
 
 class CreateJobRequest(BaseModel):

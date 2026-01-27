@@ -1,0 +1,275 @@
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { 
+  Clock, Play, Pause, Trash2, X, RefreshCw, CheckCircle, AlertCircle, 
+  Loader2, Download, ChevronDown, ChevronRight, Volume2
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import type { TTSJob, TTSSegmentStatus } from "@shared/schema";
+
+interface JobsPanelProps {
+  onPlayAudio?: (url: string) => void;
+}
+
+export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [expandedJob, setExpandedJob] = useState<string | null>(null);
+  const [playingSegment, setPlayingSegment] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const { data: jobsData, isLoading } = useQuery<{ jobs: TTSJob[] }>({
+    queryKey: ["/api/jobs"],
+    refetchInterval: 2000,
+  });
+
+  const jobs = jobsData?.jobs ?? [];
+
+  const { data: segmentsData } = useQuery<{ segments: TTSSegmentStatus[] }>({
+    queryKey: ["/api/jobs", expandedJob, "segments"],
+    enabled: !!expandedJob,
+    refetchInterval: expandedJob ? 2000 : false,
+  });
+
+  const segments = segmentsData?.segments ?? [];
+
+  const cancelMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      await apiRequest("POST", `/api/jobs/${jobId}/cancel`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Job cancelled" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      await apiRequest("DELETE", `/api/jobs/${jobId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Job deleted" });
+    },
+  });
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "pending":
+        return <Clock className="h-4 w-4 text-muted-foreground" />;
+      case "processing":
+        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+      case "completed":
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case "failed":
+        return <AlertCircle className="h-4 w-4 text-destructive" />;
+      case "cancelled":
+        return <X className="h-4 w-4 text-muted-foreground" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+      pending: "secondary",
+      processing: "default",
+      completed: "outline",
+      failed: "destructive",
+      cancelled: "secondary",
+    };
+    return (
+      <Badge variant={variants[status] || "secondary"} className="text-xs">
+        {status}
+      </Badge>
+    );
+  };
+
+  const playSegmentAudio = (jobId: string, segmentId: string) => {
+    const url = `/api/jobs/${jobId}/segments/${segmentId}/audio`;
+    
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    
+    audioRef.current = new Audio(url);
+    audioRef.current.play();
+    setPlayingSegment(segmentId);
+    
+    audioRef.current.onended = () => {
+      setPlayingSegment(null);
+    };
+  };
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setPlayingSegment(null);
+    }
+  };
+
+  const downloadJobAudio = (jobId: string) => {
+    window.open(`/api/jobs/${jobId}/audio`, "_blank");
+  };
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+    };
+  }, []);
+
+  if (jobs.length === 0 && !isLoading) {
+    return null;
+  }
+
+  return (
+    <Card data-testid="jobs-panel">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Generation Jobs
+          </CardTitle>
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <ScrollArea className="max-h-[300px]">
+          <div className="space-y-3">
+            {jobs.map((job) => (
+              <Collapsible
+                key={job.id}
+                open={expandedJob === job.id}
+                onOpenChange={(open) => setExpandedJob(open ? job.id : null)}
+              >
+                <div className="border rounded-lg p-3 space-y-2">
+                  <CollapsibleTrigger className="w-full" data-testid={`job-expand-${job.id}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {expandedJob === job.id ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        {getStatusIcon(job.status)}
+                        <span className="font-medium text-sm truncate max-w-[150px]">
+                          {job.title}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge(job.status)}
+                      </div>
+                    </div>
+                  </CollapsibleTrigger>
+
+                  <div className="pl-6">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                      <span>
+                        {job.completedSegments}/{job.totalSegments} segments
+                      </span>
+                      <span>{Math.round(job.progress)}%</span>
+                    </div>
+                    <Progress value={job.progress} className="h-1.5" />
+                  </div>
+
+                  <div className="flex items-center gap-1 pl-6">
+                    {job.status === "completed" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => downloadJobAudio(job.id)}
+                        data-testid={`job-download-${job.id}`}
+                      >
+                        <Download className="h-3.5 w-3.5 mr-1" />
+                        Download
+                      </Button>
+                    )}
+                    {job.status === "processing" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => cancelMutation.mutate(job.id)}
+                        disabled={cancelMutation.isPending}
+                        data-testid={`job-cancel-${job.id}`}
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Cancel
+                      </Button>
+                    )}
+                    {(job.status === "completed" || job.status === "failed" || job.status === "cancelled") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteMutation.mutate(job.id)}
+                        disabled={deleteMutation.isPending}
+                        data-testid={`job-delete-${job.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete
+                      </Button>
+                    )}
+                  </div>
+
+                  <CollapsibleContent>
+                    <div className="mt-3 pt-3 border-t space-y-1.5 pl-6">
+                      <div className="text-xs font-medium text-muted-foreground mb-2">
+                        Segments:
+                      </div>
+                      {segments.map((seg) => (
+                        <div
+                          key={seg.id}
+                          className="flex items-center justify-between text-xs py-1.5 px-2 rounded bg-muted/50"
+                          data-testid={`segment-${seg.id}`}
+                        >
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {getStatusIcon(seg.status)}
+                            <span className="truncate flex-1">
+                              {seg.segmentIndex + 1}. {seg.text.slice(0, 50)}...
+                            </span>
+                          </div>
+                          {seg.hasAudio && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() =>
+                                playingSegment === seg.id
+                                  ? stopAudio()
+                                  : playSegmentAudio(job.id, seg.id)
+                              }
+                              data-testid={`segment-play-${seg.id}`}
+                            >
+                              {playingSegment === seg.id ? (
+                                <Pause className="h-3 w-3" />
+                              ) : (
+                                <Volume2 className="h-3 w-3" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      {segments.length === 0 && (
+                        <div className="text-xs text-muted-foreground py-2">
+                          No segments yet
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            ))}
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  );
+}

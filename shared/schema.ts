@@ -192,6 +192,46 @@ export const progressUpdateSchema = z.object({
 
 export type ProgressUpdate = z.infer<typeof progressUpdateSchema>;
 
+// TTS Job types
+export const jobStatusSchema = z.enum(["pending", "processing", "completed", "failed", "cancelled"]);
+export type JobStatus = z.infer<typeof jobStatusSchema>;
+
+export const segmentStatusSchema = z.enum(["pending", "processing", "completed", "failed"]);
+export type SegmentStatus = z.infer<typeof segmentStatusSchema>;
+
+export const ttsJobSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: jobStatusSchema,
+  totalSegments: z.number(),
+  completedSegments: z.number(),
+  failedSegments: z.number().default(0),
+  ttsEngine: z.string(),
+  narratorVoiceId: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  progress: z.number(),
+});
+
+export type TTSJob = z.infer<typeof ttsJobSchema>;
+
+export const ttsSegmentSchema = z.object({
+  id: z.string(),
+  segmentIndex: z.number(),
+  text: z.string(),
+  type: z.string(),
+  speaker: z.string().nullable(),
+  sentiment: z.string().nullable(),
+  status: segmentStatusSchema,
+  audioPath: z.string().nullable(),
+  hasAudio: z.boolean(),
+  durationSeconds: z.number().nullable(),
+  errorMessage: z.string().nullable(),
+});
+
+export type TTSSegmentStatus = z.infer<typeof ttsSegmentSchema>;
+
 // Legacy user types (kept for compatibility)
 export const userSchema = z.object({
   id: z.string(),
