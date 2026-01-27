@@ -1,17 +1,14 @@
 # Narrator AI - Text to Audiobook Generator
 
 ## Overview
+Narrator AI is a web application designed to transform plain text into expressive audiobooks using advanced AI-powered text-to-speech (TTS) technologies. Its core purpose is to provide high-quality, customizable audiobook generation, incorporating features like multi-speaker assignment, sentiment-based prosody adjustments, and smart text chunking. The project aims to deliver a seamless user experience for converting various text formats, including EPUBs, into engaging audio content, leveraging both neural and local TTS engines for flexibility and performance.
 
-A web application that converts plain text into expressive audiobooks using AI-powered text-to-speech with:
-- **edge-tts** for high-quality neural TTS (300+ voices, works without GPU)
-- **Soprano TTS** for ultra-fast local generation (80M model, 2000x real-time on GPU)
-- Voice cloning via Chatterbox TTS (when GPU available, or via external FastAPI endpoint)
-- Sentiment-based pitch and speed adjustments using pyrubberband
-- Automatic dialogue/narration separation
-- Multi-speaker voice assignment
-- Smart text chunking (~30 second intervals)
+## User Preferences
+- Modern, professional design with purple/violet theme
+- Clean UI with proper spacing and typography
+- Responsive layout
 
-## Architecture
+## System Architecture
 
 ### Frontend (React + TypeScript)
 - **Framework**: React with TypeScript
@@ -19,226 +16,29 @@ A web application that converts plain text into expressive audiobooks using AI-p
 - **State Management**: TanStack Query for server state
 - **Routing**: Wouter
 - **UI Components**: Shadcn/ui
+- **UI/UX Decisions**: Three-tab layout (Beginner, Advanced, Job Monitor), file upload workflow, wizard-style generation flow (Upload → Analyzing → Voice Selection → Generate), real-time progress updates, dark mode support.
 
 ### Backend (Python + FastAPI)
 - **Framework**: FastAPI with uvicorn
-- **TTS Engine**: edge-tts (Microsoft Azure Neural TTS), with Chatterbox TTS fallback for voice cloning
-- **Audio Processing**: pyrubberband for pitch/speed manipulation, pydub for format conversion
-- **Sentiment Analysis**: TextBlob
-- **Audio I/O**: soundfile, numpy, scipy
+- **TTS Engines**:
+    - **edge-tts**: High-quality neural TTS (Microsoft Azure), 300+ voices.
+    - **Soprano TTS**: Ultra-fast local generation (80M model, 2000x real-time on GPU).
+    - **Chatterbox TTS**: Voice cloning (via HuggingFace Spaces API or local when GPU available), supports emotion-based exaggeration.
+    - **OpenAI TTS**: Utilizes 6 premium voices.
+    - **Piper TTS**: Local TTS engine.
+- **Audio Processing**: pyrubberband for pitch/speed manipulation, pydub for format conversion, soundfile, numpy, scipy for audio I/O. Aggressive silence trimming for TTS audio (two-pass removal and edge trimming).
+- **Sentiment Analysis**: TextBlob, integrated into LLM output for emotion-based prosody adjustments.
+- **Text Processing**: Smart chunking (sentence endings, colons/semicolons, commas, conjunctions, word-based), dialogue/narration separation, speaker identification using LLMs (e.g., ChatGPT 4o via OpenRouter) with confidence scores, automatic name extraction, and user-provided name hints.
+- **Job Management**: Asynchronous TTS generation jobs running in background threads, with database persistence (SQLAlchemy) for jobs and segments. Real-time progress tracking, partial playback of segments, and job lifecycle management (create, list, cancel, delete).
+- **File Handling**: Support for `.txt` and `.epub` files with automatic chapter extraction (using `ebooklib`).
+- **API Endpoints**: Comprehensive RESTful API for managing voices, text parsing, generating audiobooks, and monitoring job status.
 
-## Project Structure
-
-```
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── components/    # UI components
-│   │   │   ├── TextInput.tsx
-│   │   │   ├── VoiceSampleManager.tsx
-│   │   │   ├── VoiceLibrary.tsx
-│   │   │   ├── TextPreview.tsx
-│   │   │   ├── SpeakerAssignment.tsx
-│   │   │   ├── AudioPlayer.tsx
-│   │   │   ├── GenerationProgress.tsx
-│   │   │   └── SettingsPanel.tsx
-│   │   ├── pages/         # Page components
-│   │   └── lib/           # Utilities
-├── backend/               # Python FastAPI backend
-│   ├── main.py           # FastAPI app and routes
-│   ├── models.py         # Pydantic models
-│   ├── text_parser.py    # Text parsing and chunking
-│   ├── audio_processor.py # Pitch/speed processing
-│   ├── tts_service.py    # TTS generation
-│   ├── database.py       # SQLAlchemy models for job persistence
-│   ├── job_manager.py    # Job CRUD operations
-│   └── job_runner.py     # Background TTS processing
-├── server/               # Node.js proxy server
-└── shared/               # Shared TypeScript types
-```
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/health | Health check |
-| GET | /api/voices | List voice samples |
-| POST | /api/voices/upload | Upload voice sample |
-| DELETE | /api/voices/:id | Delete voice sample |
-| GET | /api/voice-library | List pre-recorded library voices |
-| GET | /api/edge-voices | List available edge-tts neural voices |
-| GET | /api/openai-voices | List available OpenAI TTS voices |
-| POST | /api/parse-text | Parse text into segments |
-| POST | /api/generate | Generate audiobook (legacy SSE) |
-| POST | /api/jobs | Create async TTS generation job |
-| GET | /api/jobs | List all TTS jobs |
-| GET | /api/jobs/:id | Get job status and progress |
-| GET | /api/jobs/:id/segments | List segments for a job |
-| GET | /api/jobs/:id/segments/:segId/audio | Get audio for a specific segment |
-| GET | /api/jobs/:id/audio | Get combined audio for completed segments |
-| POST | /api/jobs/:id/cancel | Cancel a running job |
-| DELETE | /api/jobs/:id | Delete a job and its segments |
-
-## Key Features
-
-1. **Text Parsing**: Separates dialogue (quotes) from narration, identifies speakers using dialogue verbs
-
-2. **Emotion-Based Prosody**: Applies subtle pitch and speed adjustments based on detected emotion:
-   
-   | Emotion    | Pitch    | Speed    | Description                    |
-   |------------|----------|----------|--------------------------------|
-   | neutral    |  0%      |  0%      | No adjustment                  |
-   | happy      | +1%      | +1%      | Joy, pleasure, positive        |
-   | sad        | -1%      | -1%      | Sorrow, disappointment, loss   |
-   | angry      | +1%      | +1%      | Frustration, confrontation     |
-   | fearful    | +1%      | +1%      | Fear, worry, danger            |
-   | surprised  | +1%      | +1%      | Shock, astonishment            |
-   | disgusted  | -1%      | -1%      | Revulsion, distaste            |
-   | excited    | +1%      | +1%      | Enthusiasm, anticipation       |
-   | calm       |  0%      | -1%      | Peaceful, serene               |
-   | anxious    | +0.5%    | +1%      | Nervousness, tension           |
-   | hopeful    | +0.5%    |  0%      | Optimism, looking forward      |
-   | melancholy | -0.5%    | -1%      | Wistful sadness, nostalgia     |
-
-3. **Smart Chunking**: Splits text at natural break points:
-   - Sentence endings (. ! ?)
-   - Colons/semicolons
-   - Commas
-   - Conjunctions (and, but, or)
-   - Between words (last resort)
-
-4. **Voice Cloning**: Uses 7-20 second audio samples for voice cloning via Chatterbox
-
-5. **Voice Library**: Pre-uploaded voice samples from the VCTK corpus in `voice_samples/` folder:
-   - Format: `p{number}_mic1.wav` and `p{number}_mic2.wav` audio files
-   - Metadata in transcript files: `p{number}_{gender}_{age}_{language}_{location}.txt`
-   - Display format: "Voice 226: M/22 Surrey, England"
-   - Features: preview playback, search/filter by gender, role assignment
-
-## Running the Application
-
-The application requires both the Python backend and Node.js frontend to run:
-
-1. **Python Backend** (port 8000):
-   ```bash
-   cd backend && python main.py
-   ```
-
-2. **Node.js Frontend** (port 5000):
-   ```bash
-   npm run dev
-   ```
-
-Or use the combined start script:
-```bash
-./start.sh
-```
-
-## Environment Variables
-
-- `PORT`: Frontend port (default: 5000)
-- `PYTHON_BACKEND_URL`: Backend URL (default: http://127.0.0.1:8000)
-
-## Recent Changes
-
-- **2026-01-27**: Aggressive silence trimming for TTS audio
-  - **Two-pass silence removal**: First scans for 2+ seconds of contiguous silence and truncates everything after (catches model hallucinations), then trims remaining silence from edges
-  - **New methods in AudioProcessor**: `trim_silence_edges()`, `truncate_at_long_silence()`, `aggressive_silence_trim()`
-  - **Legacy compatibility**: `trim_trailing_silence()` now redirects to `aggressive_silence_trim()` for better results
-  - Particularly effective for Chatterbox TTS which often produces 5+ seconds of trailing silence and occasional gibberish
-- **2026-01-27**: Asynchronous TTS job processing with persistence
-  - **Background job system**: TTS generation now runs in background threads, allowing the UI to remain responsive
-  - **Database persistence**: Jobs and segments stored in PostgreSQL, surviving page reloads and server restarts
-  - **Progress tracking**: Real-time progress updates via polling (2-second interval)
-  - **Partial playback**: Play individual segments as they complete, even while job is still processing
-  - **Job management**: Create, list, cancel, and delete jobs via REST API
-  - **Combined audio**: Download all completed segments as a single MP3 file
-  - **Auto-cleanup**: Old jobs (>24 hours) automatically cleaned up on a background schedule
-  - **New files**: `backend/database.py`, `backend/job_manager.py`, `backend/job_runner.py`
-  - **Frontend**: New `JobsPanel` component shows active jobs with progress and segment playback
-- **2026-01-26**: TTS engine improvements and strict error handling
-  - **Removed all fallback chains**: Each TTS engine now throws exceptions on failure instead of silently falling back
-    - Provides clearer error messages to users when a specific engine fails
-    - Ensures users know exactly which engine they're using
-  - **Chatterbox emotion-based exaggeration**: Dynamically adjusts exaggeration parameter per segment based on detected sentiment
-    - Maps emotions like "excited" (0.9), "angry" (0.85), "calm" (0.4) to exaggeration values
-    - Blends target exaggeration with base config based on sentiment confidence score
-  - **Soprano TTS** (ekwek/Soprano-1.1-80M): Ultra-fast local TTS with 80M parameters
-    - 2000x real-time on GPU, 20x on CPU
-    - 32kHz audio output, resampled to 24kHz for consistency
-    - Note: Soprano does not support voice cloning (speed-optimized only)
-  - Fixed Chatterbox Paid import error (relative → absolute import)
-- **2026-01-26**: LLM parsing chunk optimization
-  - Reduced batch size from 10 paragraphs to 2-3 paragraphs per LLM call
-  - Quote-aware splitting prevents mid-dialogue cuts (tracks straight quotes via parity, curly quotes via balance)
-  - Runaway batch prevention: capped at 6 paragraphs (2x target) if quotes never balance
-  - More granular progress updates during LLM parsing phase
-- **2026-01-26**: Streaming progress and audio quality improvements
-  - Real-time progress updates via Server-Sent Events (SSE) with asyncio.Queue
-  - Progress bar now updates incrementally during generation (not 0%→100% jumps)
-  - Trailing silence trimming on audio chunks using RMS analysis (50ms blocks, 0.01 threshold)
-  - Voice ID prefix system: `edge:`, `openai:`, `library:` for engine-specific voices
-  - Dynamic voice dropdowns update based on selected TTS engine
-  - 10-minute SSE timeout for long audiobook generation
-- **2026-01-26**: Chatterbox TTS split into free and paid tiers
-  - **Chatterbox Free**: Uses ResembleAI HuggingFace Space via Gradio API, 300 char limit, GPU quota limits
-  - **Chatterbox Paid**: Uses custom HuggingFace Space via direct REST API
-    - POST to `/gradio_api/api/tts_to_mp3` with multipart form data (text, seed, voice_reference_audio)
-    - Returns MP3 audio, no character limit
-  - Default paid space: `https://cherithcutestory-chatterbox-docker.hf.space`
-  - Configuration via environment variables: CHATTERBOX_API_URL (space URL), CHATTERBOX_API_KEY (optional Bearer token)
-  - `/api/chatterbox-status` endpoint for checking configuration
-- **2026-01-26**: Chatterbox voice cloning via HuggingFace Spaces
-  - Uses gradio_client to connect to ResembleAI/Chatterbox Space
-  - No GPU required - runs in cloud via Gradio API
-  - Supports voice cloning with audio reference files
-  - Falls back from local Chatterbox → Gradio API → edge-tts → sine wave
-  - 300 character limit per generation (auto-truncated)
-  - Configurable exaggeration, temperature, and CFG weight
-- **2026-01-26**: Multi-engine TTS selection with improved fallback chain
-  - TTS Engine dropdown in Settings: Edge TTS (default), OpenAI, Chatterbox, Piper
-  - Voice Library dynamically updates based on selected engine
-  - OpenAI TTS with 6 premium voices (alloy, echo, fable, onyx, nova, shimmer)
-  - Improved fallback chain: selected engine → edge-tts → sine wave (better quality)
-  - OpenAI voice mapping validates voice names before API calls
-  - Piper TTS checks for CLI availability before attempting generation
-  - New `/api/openai-voices` endpoint for listing OpenAI TTS voices
-- **2026-01-26**: Integrated edge-tts as primary TTS engine
-  - Microsoft Azure Neural TTS with 300+ voices (47 English voices)
-  - Works without GPU, high-quality speech synthesis
-  - Automatic fallback from Chatterbox when not available
-  - New `/api/edge-voices` endpoint lists all available neural voices
-  - Preset voices for common use cases (narrator, male/female US/UK/AU)
-  - Ready for future Chatterbox FastAPI endpoint integration
-- **2026-01-25**: Major LLM parsing upgrade with ChatGPT and speaker confidence scores
-  - Default model changed to ChatGPT 4o (via OpenRouter)
-  - New JSON output format with speaker confidence scores (e.g., {"Shane": 0.95, "Ilya": 0.05})
-  - Segments flagged for review when speaker confidence variance is low
-  - ~30 second audio chunks at natural stopping points (speaker/narration transitions)
-  - Conversational LLM context: parses ~10 paragraphs per prompt, maintaining character context
-  - Sentiment analysis included in LLM output
-  - UI shows "needs review" badges for uncertain speaker assignments
-  - Tooltip shows full confidence breakdown on hover
-- **2026-01-25**: Enhanced LLM speaker detection with chunking and name hints
-  - Text is now split into ~2000 char chunks at safe boundaries (avoids splitting quotes)
-  - Automatic name extraction finds potential speakers using dialogue verb patterns
-  - Users can optionally provide known speaker names to guide the AI
-- **2026-01-25**: Added LLM-powered speaker detection via OpenRouter integration
-  - Users can choose between AI Detection (LLM) and Basic (heuristic) modes
-  - Model selection dropdown with Llama, Mistral, Qwen, DeepSeek options
-  - Automatic fallback to basic parsing if LLM fails
-- **2026-01-25**: Fixed curly/smart quote detection (", ")
-- **2026-01-25**: Improved speaker detection - now checks text after quotes first (e.g., "Hello!" said John)
-- **2026-01-25**: Added smart text chunking with ~30s target and priority-based split points
-- **2026-01-25**: Fixed API response parsing bug in frontend
-- **2026-01-25**: Integrated sentiment-driven prosody in TTS pipeline
-- Initial implementation with React frontend and Python backend
-- Text parsing with sentiment analysis
-- Voice sample upload and management
-- Audio generation with prosody adjustments
-- Dark mode support
-
-## User Preferences
-
-- Modern, professional design with purple/violet theme
-- Clean UI with proper spacing and typography
-- Responsive layout
+## External Dependencies
+- **Microsoft Azure Neural TTS**: (via `edge-tts`)
+- **Soprano TTS**: (ekwek/Soprano-1.1-80M)
+- **Chatterbox TTS**: HuggingFace Spaces (Gradio API for Free tier, custom API for Paid tier)
+- **OpenAI TTS API**
+- **Piper TTS CLI**
+- **OpenRouter**: For LLM-powered text parsing and speaker detection (e.g., ChatGPT 4o, Llama, Mistral, Qwen, DeepSeek).
+- **PostgreSQL**: For job persistence and database management.
+- **VTCK Corpus**: Pre-recorded voice samples for the voice library.

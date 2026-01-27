@@ -36,6 +36,49 @@ class SegmentStatus(str, Enum):
     FAILED = "failed"
 
 
+class UploadStatus(str, Enum):
+    PENDING = "pending"
+    ANALYZING = "analyzing"
+    ANALYZED = "analyzed"
+    FAILED = "failed"
+
+
+class FileUpload(Base):
+    """Represents an uploaded file (txt or epub) for processing."""
+    __tablename__ = "file_uploads"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    filename = Column(String, nullable=False)
+    filetype = Column(String, nullable=False)  # "txt" or "epub"
+    status = Column(String, nullable=False, default=UploadStatus.PENDING.value)
+    tts_engine = Column(String, nullable=False, default="edge-tts")
+    total_chapters = Column(Integer, nullable=False, default=1)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    chapters = relationship("FileChapter", back_populates="upload", cascade="all, delete-orphan")
+
+
+class FileChapter(Base):
+    """Represents a chapter within an uploaded file."""
+    __tablename__ = "file_chapters"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    upload_id = Column(String, ForeignKey("file_uploads.id", ondelete="CASCADE"), nullable=False)
+    chapter_index = Column(Integer, nullable=False)
+    title = Column(String, nullable=True)
+    raw_text = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default=UploadStatus.PENDING.value)
+    analysis_json = Column(Text, nullable=True)  # JSON: {segments: [], speakers: []}
+    tts_job_id = Column(String, nullable=True)  # Reference to TTS job when generated
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    upload = relationship("FileUpload", back_populates="chapters")
+
+
 class TTSJob(Base):
     """Represents a TTS generation job that processes multiple segments."""
     __tablename__ = "tts_jobs"

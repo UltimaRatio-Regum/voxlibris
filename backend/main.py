@@ -869,6 +869,185 @@ async def get_combined_audio(job_id: str):
     )
 
 
+from upload_manager import upload_manager
+
+
+class StartAnalysisRequest(BaseModel):
+    useLlm: bool = False
+    model: Optional[str] = None
+
+
+@app.post("/uploads")
+async def upload_file(
+    file: UploadFile = File(...),
+    tts_engine: str = Form("edge-tts"),
+):
+    """Upload a .txt or .epub file for processing."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    
+    ext = file.filename.lower().split('.')[-1]
+    if ext not in ('txt', 'epub'):
+        raise HTTPException(status_code=400, detail="Only .txt and .epub files are supported")
+    
+    try:
+        content = await file.read()
+        upload = upload_manager.create_upload(
+            filename=file.filename,
+            file_content=content,
+            tts_engine=tts_engine
+        )
+        
+        return {
+            "uploadId": upload.id,
+            "filename": upload.filename,
+            "filetype": upload.filetype,
+            "totalChapters": upload.total_chapters,
+            "status": upload.status
+        }
+    except Exception as e:
+        logger.error(f"Failed to process upload: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/uploads/{upload_id}/analyze")
+async def start_analysis(upload_id: str, request: StartAnalysisRequest):
+    """Start background analysis for an upload."""
+    upload = upload_manager.get_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    
+    upload_manager.start_analysis(
+        upload_id,
+        use_llm=request.useLlm,
+        model=request.model
+    )
+    
+    return {"status": "analyzing", "uploadId": upload_id}
+
+
+@app.get("/uploads")
+async def list_uploads(limit: int = 20):
+    """List recent uploads."""
+    uploads = upload_manager.list_uploads(limit=limit)
+    return {"uploads": uploads}
+
+
+@app.get("/uploads/{upload_id}")
+async def get_upload(upload_id: str):
+    """Get upload status and chapters."""
+    upload = upload_manager.get_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    return upload
+
+
+@app.get("/uploads/{upload_id}/chapters/{chapter_id}/analysis")
+async def get_chapter_analysis(upload_id: str, chapter_id: str):
+    """Get analysis results for a specific chapter."""
+    analysis = upload_manager.get_chapter_analysis(chapter_id)
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return analysis
+
+
+@app.delete("/uploads/{upload_id}")
+async def delete_upload(upload_id: str):
+    """Delete an upload and all its chapters."""
+    success = upload_manager.delete_upload(upload_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    return {"status": "deleted"}
+
+
+class GenerateFromUploadRequest(BaseModel):
+    voiceAssignments: dict = {}
+    singleVoice: Optional[str] = None
+    chapterIds: Optional[list] = None
+
+
+def parse_voice_id(voice_id: str) -> dict:
+    """Parse voice ID string into component parts for config."""
+    if voice_id.startswith("edge:"):
+        return {"type": "edge", "id": voice_id[5:]}
+    elif voice_id.startswith("openai:"):
+        return {"type": "openai", "id": voice_id[7:]}
+    elif voice_id.startswith("library:"):
+        return {"type": "library", "id": voice_id[8:]}
+    else:
+        return {"type": "unknown", "id": voice_id}
+
+
+@app.post("/uploads/{upload_id}/generate")
+async def generate_from_upload(upload_id: str, request: GenerateFromUploadRequest):
+    """Generate TTS jobs from an analyzed upload."""
+    upload = upload_manager.get_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    
+    if upload["status"] != "analyzed":
+        raise HTTPException(status_code=400, detail="Upload must be analyzed before generating")
+    
+    job_ids = []
+    
+    for chapter in upload["chapters"]:
+        if request.chapterIds and chapter["id"] not in request.chapterIds:
+            continue
+        
+        if not chapter["hasAnalysis"]:
+            continue
+        
+        analysis = upload_manager.get_chapter_analysis(chapter["id"])
+        if not analysis:
+            continue
+        
+        segments = analysis.get("segments", [])
+        if not segments:
+            continue
+        
+        speaker_configs = {}
+        if request.voiceAssignments:
+            for speaker, voice_id in request.voiceAssignments.items():
+                parsed = parse_voice_id(voice_id)
+                speaker_configs[speaker] = {
+                    "name": speaker,
+                    "voiceId": voice_id,
+                    "pitchOffset": 0,
+                    "speedFactor": 1.0
+                }
+        
+        narrator_voice = request.singleVoice
+        
+        config = {
+            "ttsEngine": upload["ttsEngine"],
+            "narratorVoiceId": narrator_voice,
+            "speakers": speaker_configs,
+            "pauseBetweenSegments": 500,
+            "defaultExaggeration": 0.5
+        }
+        
+        job_id = create_job(
+            title=f"{upload['filename']} - {chapter['title']}",
+            segments=segments,
+            config=config
+        )
+        
+        from database import get_db_session, FileChapter
+        db = get_db_session()
+        try:
+            ch = db.query(FileChapter).filter(FileChapter.id == chapter["id"]).first()
+            if ch:
+                ch.tts_job_id = job_id
+                db.commit()
+        finally:
+            db.close()
+        
+        start_job_async(job_id)
+        job_ids.append(job_id)
+    
+    return {"jobIds": job_ids, "count": len(job_ids)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
