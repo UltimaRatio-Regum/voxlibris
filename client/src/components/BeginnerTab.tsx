@@ -95,9 +95,7 @@ export function BeginnerTab() {
       setCurrentUploadId(data.uploadId);
       setStep("analyzing");
       
-      await apiRequest("POST", `/api/uploads/${data.uploadId}/analyze`, {
-        useLlm: false,
-      });
+      await apiRequest("POST", `/api/uploads/${data.uploadId}/analyze`);
       
       toast({
         title: "File uploaded",

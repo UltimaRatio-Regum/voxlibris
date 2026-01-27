@@ -82,14 +82,12 @@ class UploadManager:
         finally:
             db.close()
     
-    def start_analysis(self, upload_id: str, use_llm: bool = True, model: str = None):
+    def start_analysis(self, upload_id: str):
         """
         Start background analysis for an upload.
         
         Args:
             upload_id: ID of the upload to analyze
-            use_llm: Whether to use LLM for speaker detection
-            model: LLM model to use (if use_llm is True)
         """
         if upload_id in self._analysis_threads:
             existing = self._analysis_threads[upload_id]
@@ -99,7 +97,7 @@ class UploadManager:
         
         thread = threading.Thread(
             target=self._run_analysis,
-            args=(upload_id, use_llm, model),
+            args=(upload_id,),
             daemon=True
         )
         self._analysis_threads[upload_id] = thread
@@ -107,7 +105,7 @@ class UploadManager:
         
         logger.info(f"Started analysis thread for upload {upload_id}")
     
-    def _run_analysis(self, upload_id: str, use_llm: bool, model: str):
+    def _run_analysis(self, upload_id: str):
         """Background thread for analyzing chapters."""
         db = get_db_session()
         try:

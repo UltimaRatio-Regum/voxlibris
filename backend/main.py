@@ -873,8 +873,7 @@ from upload_manager import upload_manager
 
 
 class StartAnalysisRequest(BaseModel):
-    useLlm: bool = False
-    model: Optional[str] = None
+    pass
 
 
 @app.post("/uploads")
@@ -911,16 +910,14 @@ async def upload_file(
 
 
 @app.post("/uploads/{upload_id}/analyze")
-async def start_analysis(upload_id: str, request: StartAnalysisRequest):
+async def start_analysis(upload_id: str):
     """Start background analysis for an upload."""
     upload = upload_manager.get_upload(upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
     
     upload_manager.start_analysis(
-        upload_id,
-        use_llm=request.useLlm,
-        model=request.model
+        upload_id
     )
     
     return {"status": "analyzing", "uploadId": upload_id}
@@ -1006,17 +1003,30 @@ async def generate_from_upload(upload_id: str, request: GenerateFromUploadReques
             continue
         
         speaker_configs = {}
+        narrator_voice = None
+        
         if request.voiceAssignments:
             for speaker, voice_id in request.voiceAssignments.items():
                 parsed = parse_voice_id(voice_id)
                 speaker_configs[speaker] = {
                     "name": speaker,
-                    "voiceId": voice_id,
+                    "voiceSampleId": parsed["id"],
+                    "voiceType": parsed["type"],
                     "pitchOffset": 0,
                     "speedFactor": 1.0
                 }
+                if speaker == "Narrator":
+                    narrator_voice = parsed["id"]
         
-        narrator_voice = request.singleVoice
+        if request.singleVoice:
+            parsed_narrator = parse_voice_id(request.singleVoice)
+            narrator_voice = parsed_narrator["id"]
+        
+        if not narrator_voice:
+            raise HTTPException(
+                status_code=400,
+                detail="Narrator voice is required. Please select a voice for narration."
+            )
         
         config = {
             "ttsEngine": upload["ttsEngine"],
