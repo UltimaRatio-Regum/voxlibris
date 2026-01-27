@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -143,8 +142,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="max-h-[300px]">
-          <div className="space-y-3">
+        <div className="space-y-3">
             {jobs.map((job) => (
               <Collapsible
                 key={job.id}
@@ -205,18 +203,19 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                         Cancel
                       </Button>
                     )}
-                    {(job.status === "completed" || job.status === "failed" || job.status === "cancelled") && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteMutation.mutate(job.id)}
-                        disabled={deleteMutation.isPending}
-                        data-testid={`job-delete-${job.id}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" />
-                        Delete
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteMutation.mutate(job.id);
+                      }}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`job-delete-${job.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Delete
+                    </Button>
                   </div>
 
                   <CollapsibleContent>
@@ -267,8 +266,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                 </div>
               </Collapsible>
             ))}
-          </div>
-        </ScrollArea>
+        </div>
       </CardContent>
     </Card>
   );
