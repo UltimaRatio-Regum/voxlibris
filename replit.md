@@ -48,7 +48,10 @@ A web application that converts plain text into expressive audiobooks using AI-p
 │   ├── models.py         # Pydantic models
 │   ├── text_parser.py    # Text parsing and chunking
 │   ├── audio_processor.py # Pitch/speed processing
-│   └── tts_service.py    # TTS generation
+│   ├── tts_service.py    # TTS generation
+│   ├── database.py       # SQLAlchemy models for job persistence
+│   ├── job_manager.py    # Job CRUD operations
+│   └── job_runner.py     # Background TTS processing
 ├── server/               # Node.js proxy server
 └── shared/               # Shared TypeScript types
 ```
@@ -65,7 +68,15 @@ A web application that converts plain text into expressive audiobooks using AI-p
 | GET | /api/edge-voices | List available edge-tts neural voices |
 | GET | /api/openai-voices | List available OpenAI TTS voices |
 | POST | /api/parse-text | Parse text into segments |
-| POST | /api/generate | Generate audiobook |
+| POST | /api/generate | Generate audiobook (legacy SSE) |
+| POST | /api/jobs | Create async TTS generation job |
+| GET | /api/jobs | List all TTS jobs |
+| GET | /api/jobs/:id | Get job status and progress |
+| GET | /api/jobs/:id/segments | List segments for a job |
+| GET | /api/jobs/:id/segments/:segId/audio | Get audio for a specific segment |
+| GET | /api/jobs/:id/audio | Get combined audio for completed segments |
+| POST | /api/jobs/:id/cancel | Cancel a running job |
+| DELETE | /api/jobs/:id | Delete a job and its segments |
 
 ## Key Features
 
@@ -129,6 +140,16 @@ Or use the combined start script:
 
 ## Recent Changes
 
+- **2026-01-27**: Asynchronous TTS job processing with persistence
+  - **Background job system**: TTS generation now runs in background threads, allowing the UI to remain responsive
+  - **Database persistence**: Jobs and segments stored in PostgreSQL, surviving page reloads and server restarts
+  - **Progress tracking**: Real-time progress updates via polling (2-second interval)
+  - **Partial playback**: Play individual segments as they complete, even while job is still processing
+  - **Job management**: Create, list, cancel, and delete jobs via REST API
+  - **Combined audio**: Download all completed segments as a single MP3 file
+  - **Auto-cleanup**: Old jobs (>24 hours) automatically cleaned up on a background schedule
+  - **New files**: `backend/database.py`, `backend/job_manager.py`, `backend/job_runner.py`
+  - **Frontend**: New `JobsPanel` component shows active jobs with progress and segment playback
 - **2026-01-26**: TTS engine improvements and strict error handling
   - **Removed all fallback chains**: Each TTS engine now throws exceptions on failure instead of silently falling back
     - Provides clearer error messages to users when a specific engine fails

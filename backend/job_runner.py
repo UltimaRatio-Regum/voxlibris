@@ -97,11 +97,12 @@ async def process_job(job_id: str):
             if audio is None or len(audio) == 0:
                 raise RuntimeError("TTS returned empty audio")
             
-            if seg_data.get("sentiment"):
-                audio = audio_processor.apply_prosody(
+            if seg_data.get("sentiment") and seg_data["sentiment"].get("label"):
+                audio = audio_processor.apply_emotion_prosody(
                     audio,
+                    tts_service.sample_rate,
                     seg_data["sentiment"]["label"],
-                    tts_service.sample_rate
+                    seg_data["sentiment"].get("score", 0.8),
                 )
             
             mp3_data = convert_to_mp3(audio, tts_service.sample_rate)
