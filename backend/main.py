@@ -296,6 +296,309 @@ async def parse_text(request: ParseTextRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ParseTextLLMRequest(BaseModel):
+    text: str
+    model: str = "openai/gpt-4o-mini"
+    knownSpeakers: list[str] = []
+
+
+@app.post("/parse-text-llm-stream")
+async def parse_text_llm_stream(request: ParseTextLLMRequest):
+    """Parse text using LLM with streaming progress updates via SSE"""
+    from starlette.responses import StreamingResponse
+    import json
+    import httpx
+    import asyncio
+    
+    OPENROUTER_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    OPENROUTER_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENROUTER_API_KEY", "")
+    
+    def split_into_chunks(text: str, max_paragraphs: int = 3) -> list[str]:
+        """Split text into chunks of ~2-3 paragraphs, respecting quote boundaries."""
+        paragraphs = re.split(r'\n\s*\n', text)
+        paragraphs = [p.strip() for p in paragraphs if p.strip()]
+        
+        if not paragraphs:
+            return [text] if text.strip() else []
+        
+        chunks = []
+        current_chunk = []
+        straight_quote_open = False
+        curly_quote_balance = 0
+        
+        for para in paragraphs:
+            straight_quotes = para.count('"')
+            curly_open = para.count('\u201c')
+            curly_close = para.count('\u201d')
+            
+            if straight_quotes % 2 == 1:
+                straight_quote_open = not straight_quote_open
+            curly_quote_balance += curly_open - curly_close
+            
+            current_chunk.append(para)
+            
+            quotes_balanced = (not straight_quote_open) and (curly_quote_balance == 0)
+            
+            if len(current_chunk) >= max_paragraphs and quotes_balanced:
+                chunks.append('\n\n'.join(current_chunk))
+                current_chunk = []
+                straight_quote_open = False
+                curly_quote_balance = 0
+            elif len(current_chunk) >= max_paragraphs * 2:
+                chunks.append('\n\n'.join(current_chunk))
+                current_chunk = []
+                straight_quote_open = False
+                curly_quote_balance = 0
+        
+        if current_chunk:
+            chunks.append('\n\n'.join(current_chunk))
+        
+        return chunks
+    
+    def fallback_parse_chunk(chunk: str) -> dict:
+        """Use basic text parser as fallback when LLM fails."""
+        segments_list, speakers_list = text_parser.parse(chunk)
+        segments = []
+        for seg in segments_list:
+            segments.append({
+                "type": seg.type,
+                "text": seg.text,
+                "speaker": seg.speaker,
+                "sentiment": seg.sentiment.label if seg.sentiment else "neutral",
+            })
+        return {"segments": segments, "detectedSpeakers": speakers_list, "fallback": True}
+    
+    def validate_llm_response(data: dict) -> bool:
+        """Validate LLM response has required structure."""
+        if not isinstance(data, dict):
+            return False
+        if "segments" not in data or not isinstance(data.get("segments"), list):
+            return False
+        for seg in data["segments"]:
+            if not isinstance(seg, dict):
+                return False
+            if "type" not in seg or "text" not in seg:
+                return False
+            if seg["type"] not in ["narration", "dialogue"]:
+                return False
+        return True
+    
+    async def call_llm_for_chunk(client: httpx.AsyncClient, chunk: str, known_speakers: list[str], context: str) -> dict:
+        """Call LLM to parse a chunk of text."""
+        speaker_hint = ""
+        if known_speakers:
+            speaker_hint = f"Known speakers so far: {', '.join(known_speakers)}. "
+        
+        valid_sentiments = ["neutral", "happy", "sad", "angry", "fearful", "excited", "calm", "surprised", "anxious", "hopeful", "melancholy", "disgusted"]
+        
+        prompt = f"""Analyze this text excerpt and identify dialogue vs narration. For each dialogue segment, identify the speaker.
+
+{speaker_hint}Previous context: {context[:500] if context else 'Start of text'}
+
+TEXT TO ANALYZE:
+{chunk}
+
+Return a JSON object with this structure:
+{{
+  "segments": [
+    {{
+      "type": "narration" or "dialogue",
+      "text": "the actual text",
+      "speaker": "speaker name or null for narration",
+      "sentiment": one of {valid_sentiments}
+    }}
+  ],
+  "detectedSpeakers": ["list", "of", "speaker", "names"]
+}}
+
+Be precise about separating quoted dialogue from narration. Return ONLY valid JSON."""
+
+        try:
+            response = await client.post(
+                f"{OPENROUTER_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": request.model,
+                    "messages": [
+                        {"role": "system", "content": "You are a text analysis assistant. Always respond with valid JSON only."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 4096,
+                },
+                timeout=60.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            
+            result = json.loads(content.strip())
+            
+            if not validate_llm_response(result):
+                logger.warning(f"LLM response failed validation, using fallback parser")
+                return fallback_parse_chunk(chunk)
+            
+            if not result.get("segments"):
+                logger.warning(f"LLM returned empty segments, using fallback parser")
+                return fallback_parse_chunk(chunk)
+            
+            return result
+        except json.JSONDecodeError as e:
+            logger.error(f"LLM returned invalid JSON: {e}")
+            return fallback_parse_chunk(chunk)
+        except Exception as e:
+            logger.error(f"LLM call failed: {e}")
+            return fallback_parse_chunk(chunk)
+    
+    async def generate_stream():
+        chunks = split_into_chunks(request.text)
+        total_chunks = len(chunks)
+        
+        if total_chunks == 0:
+            yield f"data: {json.dumps({'type': 'error', 'error': 'No text to parse'})}\n\n"
+            return
+        
+        yield f"data: {json.dumps({'type': 'progress', 'totalChunks': total_chunks, 'chunkIndex': 0})}\n\n"
+        
+        all_segments = []
+        all_speakers = set(request.knownSpeakers)
+        context = ""
+        
+        async with httpx.AsyncClient() as client:
+            for i, chunk in enumerate(chunks):
+                try:
+                    result = await call_llm_for_chunk(
+                        client, chunk, list(all_speakers), context
+                    )
+                    
+                    chunk_segments = []
+                    for seg in result.get("segments", []):
+                        segment = {
+                            "id": str(uuid.uuid4()),
+                            "type": seg.get("type", "narration"),
+                            "text": seg.get("text", ""),
+                            "speaker": seg.get("speaker"),
+                            "speakerCandidates": {seg.get("speaker"): 0.9} if seg.get("speaker") else None,
+                            "needsReview": False,
+                            "sentiment": {"label": seg.get("sentiment", "neutral"), "score": 0.8},
+                            "startIndex": 0,
+                            "endIndex": len(seg.get("text", "")),
+                        }
+                        chunk_segments.append(segment)
+                        all_segments.append(segment)
+                    
+                    for speaker in result.get("detectedSpeakers", []):
+                        if speaker:
+                            all_speakers.add(speaker)
+                    
+                    context = chunk[-500:] if len(chunk) > 500 else chunk
+                    
+                    yield f"data: {json.dumps({'type': 'chunk', 'chunkIndex': i + 1, 'totalChunks': total_chunks, 'segments': chunk_segments, 'detectedSpeakers': list(all_speakers)})}\n\n"
+                    
+                except Exception as e:
+                    logger.error(f"Failed to process chunk {i}: {e}")
+                    yield f"data: {json.dumps({'type': 'chunk', 'chunkIndex': i + 1, 'totalChunks': total_chunks, 'segments': [], 'detectedSpeakers': list(all_speakers), 'error': str(e)})}\n\n"
+        
+        yield f"data: {json.dumps({'type': 'complete', 'totalSegments': len(all_segments), 'detectedSpeakers': list(all_speakers)})}\n\n"
+    
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
+
+
+@app.post("/parse-text-llm")
+async def parse_text_llm(request: ParseTextLLMRequest):
+    """Parse text using LLM (non-streaming fallback)"""
+    import httpx
+    
+    OPENROUTER_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    OPENROUTER_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENROUTER_API_KEY", "")
+    
+    prompt = f"""Analyze this text and identify dialogue vs narration. For each dialogue segment, identify the speaker.
+
+TEXT:
+{request.text[:8000]}
+
+Return a JSON object with:
+{{
+  "segments": [
+    {{"type": "narration" or "dialogue", "text": "...", "speaker": "name or null", "sentiment": "neutral/happy/sad/angry"}}
+  ],
+  "detectedSpeakers": ["list", "of", "names"]
+}}
+
+Return ONLY valid JSON."""
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{OPENROUTER_BASE_URL}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": request.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 8192,
+                },
+                timeout=120.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            
+            result = json.loads(content.strip())
+            
+            segments = []
+            for seg in result.get("segments", []):
+                segments.append({
+                    "id": str(uuid.uuid4()),
+                    "type": seg.get("type", "narration"),
+                    "text": seg.get("text", ""),
+                    "speaker": seg.get("speaker"),
+                    "speakerCandidates": {seg.get("speaker"): 0.9} if seg.get("speaker") else None,
+                    "needsReview": False,
+                    "sentiment": {"label": seg.get("sentiment", "neutral"), "score": 0.8},
+                    "startIndex": 0,
+                    "endIndex": len(seg.get("text", "")),
+                })
+            
+            return {
+                "segments": segments,
+                "detectedSpeakers": result.get("detectedSpeakers", []),
+            }
+    except Exception as e:
+        logger.error(f"LLM parse failed: {e}")
+        segments, speakers = text_parser.parse(request.text)
+        return ParseTextResponse(segments=segments, detectedSpeakers=speakers)
+
+
 @app.post("/generate")
 async def generate_audio(request: GenerateRequest):
     """Generate audiobook from parsed segments"""
