@@ -836,11 +836,14 @@ async def delete_job_endpoint(job_id: str):
 
 
 @app.get("/jobs/{job_id}/audio")
-async def get_combined_audio(job_id: str):
-    """Get combined audio for all completed segments."""
+async def get_combined_audio(job_id: str, max_silence_ms: int = 300):
+    """Get combined audio for all completed segments with silence compression."""
     from fastapi.responses import Response
     from pydub import AudioSegment as PydubSegment
     import io
+    import numpy as np
+    
+    max_silence_ms = max(0, min(max_silence_ms, 5000))
     
     job = get_job(job_id)
     if not job:
@@ -851,13 +854,37 @@ async def get_combined_audio(job_id: str):
         raise HTTPException(status_code=404, detail="No completed segments")
     
     combined = PydubSegment.empty()
-    pause = PydubSegment.silent(duration=500)
+    pause_duration = max(50, min(max_silence_ms, 200))
+    pause = PydubSegment.silent(duration=pause_duration)
     
     for seg in sorted(segments, key=lambda s: s["segmentIndex"]):
         audio_data = get_segment_audio(seg["id"])
         if audio_data:
             segment_audio = PydubSegment.from_file(io.BytesIO(audio_data), format="mp3")
             combined += segment_audio + pause
+    
+    if len(combined) > 0 and max_silence_ms > 0:
+        sample_rate = combined.frame_rate
+        samples = np.array(combined.get_array_of_samples()).astype(np.float32)
+        samples = samples / 32768.0
+        
+        from audio_processor import AudioProcessor
+        processor = AudioProcessor()
+        compressed = processor.compress_silence_gaps(
+            samples,
+            sample_rate,
+            max_silence_ms=max_silence_ms,
+            block_ms=25,
+            silence_threshold=0.01,
+        )
+        
+        compressed_int16 = (compressed * 32767).astype(np.int16)
+        combined = PydubSegment(
+            compressed_int16.tobytes(),
+            frame_rate=sample_rate,
+            sample_width=2,
+            channels=combined.channels
+        )
     
     buffer = io.BytesIO()
     combined.export(buffer, format="mp3", bitrate="192k")

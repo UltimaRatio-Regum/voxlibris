@@ -478,3 +478,84 @@ class AudioProcessor:
         return self.aggressive_silence_trim(
             audio_data, sample_rate, block_ms, silence_threshold, long_silence_ms=2000
         )
+    
+    def compress_silence_gaps(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int,
+        max_silence_ms: int = 500,
+        block_ms: int = 25,
+        silence_threshold: float = 0.01,
+    ) -> np.ndarray:
+        """
+        Compress all silence gaps longer than max_silence_ms down to max_silence_ms.
+        
+        This creates more natural flow between segments, especially for dialogue
+        followed by attribution (e.g., '"Hello," she said.').
+        
+        Args:
+            audio_data: Audio samples as numpy array
+            sample_rate: Sample rate in Hz
+            max_silence_ms: Maximum allowed silence duration in milliseconds
+            block_ms: Block size in milliseconds for analysis (default 25ms for precision)
+            silence_threshold: Max RMS amplitude to consider as silence
+        
+        Returns:
+            Audio data with silence gaps compressed to max_silence_ms
+        """
+        if len(audio_data) == 0:
+            return audio_data
+        
+        if len(audio_data.shape) > 1:
+            audio_data = np.mean(audio_data, axis=1)
+        
+        block_samples = int(sample_rate * block_ms / 1000)
+        max_silence_samples = int(sample_rate * max_silence_ms / 1000)
+        
+        if block_samples == 0:
+            return audio_data
+        
+        total_blocks = len(audio_data) // block_samples
+        if total_blocks == 0:
+            return audio_data
+        
+        block_rms = np.zeros(total_blocks)
+        for i in range(total_blocks):
+            block = audio_data[i * block_samples:(i + 1) * block_samples]
+            block_rms[i] = np.sqrt(np.mean(block ** 2))
+        
+        is_silent = block_rms < silence_threshold
+        
+        output_chunks = []
+        i = 0
+        
+        while i < total_blocks:
+            if not is_silent[i]:
+                block_start = i * block_samples
+                block_end = (i + 1) * block_samples
+                output_chunks.append(audio_data[block_start:block_end])
+                i += 1
+            else:
+                silence_start = i
+                while i < total_blocks and is_silent[i]:
+                    i += 1
+                silence_end = i
+                
+                silence_block_count = silence_end - silence_start
+                silence_samples = silence_block_count * block_samples
+                
+                if silence_samples > max_silence_samples:
+                    silence_audio = np.zeros(max_silence_samples, dtype=audio_data.dtype)
+                    output_chunks.append(silence_audio)
+                else:
+                    block_start = silence_start * block_samples
+                    block_end = silence_end * block_samples
+                    output_chunks.append(audio_data[block_start:block_end])
+        
+        remaining_samples = len(audio_data) - (total_blocks * block_samples)
+        if remaining_samples > 0:
+            output_chunks.append(audio_data[-(remaining_samples):])
+        
+        if output_chunks:
+            return np.concatenate(output_chunks)
+        return audio_data

@@ -235,15 +235,22 @@ def convert_to_mp3(audio: np.ndarray, sample_rate: int) -> bytes:
 
 
 def start_job_async(job_id: str):
-    """Start processing a job in the background."""
-    async def run():
+    """Start processing a job in the background using thread pool."""
+    import threading
+    
+    def run_in_thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            await process_job(job_id)
+            loop.run_until_complete(process_job(job_id))
         except Exception as e:
             logger.error(f"Job {job_id} failed: {e}")
             update_job_status(job_id, JobStatus.FAILED, error_message=str(e))
+        finally:
+            loop.close()
     
-    loop = asyncio.get_event_loop()
-    task = loop.create_task(run())
-    active_jobs[job_id] = task
-    return task
+    thread = threading.Thread(target=run_in_thread, daemon=True)
+    thread.start()
+    active_jobs[job_id] = thread
+    logger.info(f"Started job {job_id} in background thread")
+    return thread
