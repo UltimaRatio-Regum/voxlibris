@@ -74,17 +74,34 @@ class AudioProcessor:
     # Volume is applied as a simple amplitude multiplier
     EMOTION_VOLUME_MAP = {
         "neutral": 1.00,
-        "happy": 1.05,      # 5% louder - upbeat energy
-        "sad": 0.95,        # 5% quieter - subdued
-        "angry": 1.10,      # 10% louder - intensity
-        "fearful": 0.95,    # 5% quieter - timid
-        "surprised": 1.08,  # 8% louder - exclamation
-        "disgusted": 1.02,  # 2% louder - slight emphasis
-        "excited": 1.10,    # 10% louder - enthusiasm
-        "calm": 0.95,       # 5% quieter - relaxed
-        "anxious": 1.03,    # 3% louder - tension
-        "hopeful": 1.02,    # 2% louder - gentle lift
-        "melancholy": 0.93, # 7% quieter - wistful
+        "happy": 1.05,
+        "sad": 0.95,
+        "angry": 1.10,
+        "fearful": 0.95,
+        "surprised": 1.08,
+        "disgusted": 1.02,
+        "excited": 1.10,
+        "calm": 0.95,
+        "anxious": 1.03,
+        "hopeful": 1.02,
+        "melancholy": 0.93,
+    }
+    
+    # Intensity/exaggeration for Chatterbox TTS (0.0 to 1.0 scale)
+    # Higher values = more emotional expression in the voice
+    EMOTION_INTENSITY_MAP = {
+        "neutral": 0.3,
+        "happy": 0.6,
+        "sad": 0.5,
+        "angry": 0.7,
+        "fearful": 0.6,
+        "surprised": 0.7,
+        "disgusted": 0.5,
+        "excited": 0.8,
+        "calm": 0.2,
+        "anxious": 0.6,
+        "hopeful": 0.5,
+        "melancholy": 0.4,
     }
     
     # Valid emotions that the LLM should use

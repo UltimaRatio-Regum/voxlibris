@@ -1075,6 +1075,8 @@ def load_prosody_settings():
                     AudioProcessor.EMOTION_SPEED_MAP[emotion] = float(data["speed"][emotion])
                 if "volume" in data and emotion in data["volume"]:
                     AudioProcessor.EMOTION_VOLUME_MAP[emotion] = float(data["volume"][emotion])
+                if "intensity" in data and emotion in data["intensity"]:
+                    AudioProcessor.EMOTION_INTENSITY_MAP[emotion] = float(data["intensity"][emotion])
             logger.info("Loaded prosody settings from file")
         except Exception as e:
             logger.warning(f"Failed to load prosody settings: {e}")
@@ -1086,6 +1088,7 @@ def save_prosody_settings():
         "pitch": AudioProcessor.EMOTION_PITCH_MAP.copy(),
         "speed": AudioProcessor.EMOTION_SPEED_MAP.copy(),
         "volume": AudioProcessor.EMOTION_VOLUME_MAP.copy(),
+        "intensity": AudioProcessor.EMOTION_INTENSITY_MAP.copy(),
     }
     try:
         with open(PROSODY_SETTINGS_FILE, "w") as f:
@@ -1100,11 +1103,12 @@ load_prosody_settings()
 
 @app.get("/prosody-settings")
 async def get_prosody_settings():
-    """Get the current emotion prosody settings (pitch, speed, volume)."""
+    """Get the current emotion prosody settings (pitch, speed, volume, intensity)."""
     return {
         "pitch": AudioProcessor.EMOTION_PITCH_MAP.copy(),
         "speed": AudioProcessor.EMOTION_SPEED_MAP.copy(),
         "volume": AudioProcessor.EMOTION_VOLUME_MAP.copy(),
+        "intensity": AudioProcessor.EMOTION_INTENSITY_MAP.copy(),
         "emotions": AudioProcessor.VALID_EMOTIONS,
     }
 
@@ -1113,6 +1117,7 @@ class ProsodySettingsRequest(BaseModel):
     pitch: dict
     speed: dict
     volume: dict
+    intensity: dict = {}
 
 
 @app.post("/prosody-settings")
@@ -1128,6 +1133,9 @@ async def update_prosody_settings(request: ProsodySettingsRequest):
         if emotion in request.volume:
             val = float(request.volume[emotion])
             AudioProcessor.EMOTION_VOLUME_MAP[emotion] = max(0.3, min(2.0, val))
+        if emotion in request.intensity:
+            val = float(request.intensity[emotion])
+            AudioProcessor.EMOTION_INTENSITY_MAP[emotion] = max(0.0, min(1.0, val))
     
     save_prosody_settings()
     
@@ -1136,6 +1144,7 @@ async def update_prosody_settings(request: ProsodySettingsRequest):
         "pitch": AudioProcessor.EMOTION_PITCH_MAP.copy(),
         "speed": AudioProcessor.EMOTION_SPEED_MAP.copy(),
         "volume": AudioProcessor.EMOTION_VOLUME_MAP.copy(),
+        "intensity": AudioProcessor.EMOTION_INTENSITY_MAP.copy(),
     }
 
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, RotateCcw, Volume2, Gauge, Music } from "lucide-react";
+import { Save, RotateCcw, Volume2, Gauge, Music, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ interface ProsodySettings {
   pitch: Record<string, number>;
   speed: Record<string, number>;
   volume: Record<string, number>;
+  intensity: Record<string, number>;
   emotions: string[];
 }
 
@@ -73,6 +74,11 @@ const DEFAULT_PROSODY: ProsodySettings = {
     neutral: 1.0, happy: 1.05, sad: 0.95, angry: 1.1,
     fearful: 0.95, surprised: 1.08, disgusted: 1.02, excited: 1.1,
     calm: 0.95, anxious: 1.03, hopeful: 1.02, melancholy: 0.93,
+  },
+  intensity: {
+    neutral: 0.3, happy: 0.6, sad: 0.5, angry: 0.7,
+    fearful: 0.6, surprised: 0.7, disgusted: 0.5, excited: 0.8,
+    calm: 0.2, anxious: 0.6, hopeful: 0.5, melancholy: 0.4,
   },
   emotions: [
     "neutral", "happy", "sad", "angry", "fearful", "surprised",
@@ -123,6 +129,7 @@ export function SettingsTab() {
         pitch: settings.pitch,
         speed: settings.speed,
         volume: settings.volume,
+        intensity: settings.intensity,
       });
       return response.json();
     },
@@ -147,7 +154,7 @@ export function SettingsTab() {
     localStorage.setItem("narrator-default-voice", voice);
   };
 
-  const handleProsodyChange = (emotion: string, field: "pitch" | "speed" | "volume", value: string) => {
+  const handleProsodyChange = (emotion: string, field: "pitch" | "speed" | "volume" | "intensity", value: string) => {
     if (!localProsody) return;
     const numValue = parseFloat(value);
     if (isNaN(numValue)) return;
@@ -253,7 +260,7 @@ export function SettingsTab() {
             <div>
               <CardTitle>Emotion Prosody Settings</CardTitle>
               <CardDescription>
-                Customize how emotions affect pitch, speed, and volume
+                Customize how emotions affect pitch, speed, volume, and intensity (Chatterbox)
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -287,19 +294,25 @@ export function SettingsTab() {
                   <TableHead className="text-center">
                     <div className="flex items-center justify-center gap-1">
                       <Music className="h-4 w-4" />
-                      <span>Pitch (semitones)</span>
+                      <span>Pitch</span>
                     </div>
                   </TableHead>
                   <TableHead className="text-center">
                     <div className="flex items-center justify-center gap-1">
                       <Gauge className="h-4 w-4" />
-                      <span>Speed (factor)</span>
+                      <span>Speed</span>
                     </div>
                   </TableHead>
                   <TableHead className="text-center">
                     <div className="flex items-center justify-center gap-1">
                       <Volume2 className="h-4 w-4" />
-                      <span>Volume (factor)</span>
+                      <span>Volume</span>
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <Zap className="h-4 w-4" />
+                      <span>Intensity</span>
                     </div>
                   </TableHead>
                 </TableRow>
@@ -314,7 +327,7 @@ export function SettingsTab() {
                         step="0.01"
                         value={localProsody?.pitch[emotion] ?? 0}
                         onChange={(e) => handleProsodyChange(emotion, "pitch", e.target.value)}
-                        className="w-24 mx-auto text-center"
+                        className="w-20 mx-auto text-center"
                         data-testid={`input-pitch-${emotion}`}
                       />
                     </TableCell>
@@ -324,7 +337,7 @@ export function SettingsTab() {
                         step="0.01"
                         value={localProsody?.speed[emotion] ?? 1}
                         onChange={(e) => handleProsodyChange(emotion, "speed", e.target.value)}
-                        className="w-24 mx-auto text-center"
+                        className="w-20 mx-auto text-center"
                         data-testid={`input-speed-${emotion}`}
                       />
                     </TableCell>
@@ -334,8 +347,20 @@ export function SettingsTab() {
                         step="0.01"
                         value={localProsody?.volume[emotion] ?? 1}
                         onChange={(e) => handleProsodyChange(emotion, "volume", e.target.value)}
-                        className="w-24 mx-auto text-center"
+                        className="w-20 mx-auto text-center"
                         data-testid={`input-volume-${emotion}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        value={localProsody?.intensity[emotion] ?? 0.5}
+                        onChange={(e) => handleProsodyChange(emotion, "intensity", e.target.value)}
+                        className="w-20 mx-auto text-center"
+                        data-testid={`input-intensity-${emotion}`}
                       />
                     </TableCell>
                   </TableRow>
@@ -344,9 +369,10 @@ export function SettingsTab() {
             </Table>
           </div>
           <div className="mt-4 text-sm text-muted-foreground space-y-1">
-            <p><strong>Pitch:</strong> Semitones offset. Positive = higher, negative = lower. Range: -12 to +12</p>
-            <p><strong>Speed:</strong> Factor multiplier. 1.0 = normal, 1.1 = 10% faster, 0.9 = 10% slower</p>
-            <p><strong>Volume:</strong> Amplitude multiplier. 1.0 = normal, 1.1 = 10% louder, 0.9 = 10% quieter</p>
+            <p><strong>Pitch:</strong> Semitones offset (-12 to +12). Positive = higher, negative = lower.</p>
+            <p><strong>Speed:</strong> Factor multiplier (0.5 to 2.0). 1.0 = normal speed.</p>
+            <p><strong>Volume:</strong> Amplitude multiplier (0.3 to 2.0). 1.0 = normal volume.</p>
+            <p><strong>Intensity:</strong> Chatterbox emotion exaggeration (0.0 to 1.0). Higher = more expressive.</p>
           </div>
         </CardContent>
       </Card>
