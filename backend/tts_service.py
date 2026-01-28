@@ -168,7 +168,7 @@ class TTSService:
                     voice_path = voice_files.get(voice_id)
             
             exaggeration = config.defaultExaggeration
-            is_chatterbox = config.ttsEngine in ("chatterbox", "chatterbox-free", "chatterbox-paid", "qwen3-tts", "styletts2", "xtts-v2")
+            is_chatterbox = config.ttsEngine in ("chatterbox", "chatterbox-free", "chatterbox-paid", "hf-tts-paid")
             if is_chatterbox and segment.sentiment:
                 exaggeration = get_sentiment_exaggeration(
                     segment.sentiment.label,
@@ -265,14 +265,9 @@ class TTSService:
             if tts_engine == "chatterbox":
                 logger.info("Legacy 'chatterbox' engine mapped to 'chatterbox-free'")
             return await self._generate_with_chatterbox_free(text, voice_path, exaggeration)
-        elif tts_engine == "chatterbox-paid":
+        elif tts_engine in ("chatterbox-paid", "hf-tts-paid"):
+            # HuggingFace TTS Paid - uses model from tts_settings.json
             return await self._generate_with_chatterbox_paid(text, voice_path, exaggeration)
-        elif tts_engine == "qwen3-tts":
-            return await self._generate_with_chatterbox_paid(text, voice_path, exaggeration, model_override="qwen3")
-        elif tts_engine == "styletts2":
-            return await self._generate_with_chatterbox_paid(text, voice_path, exaggeration, model_override="styletts2")
-        elif tts_engine == "xtts-v2":
-            return await self._generate_with_chatterbox_paid(text, voice_path, exaggeration, model_override="xtts_v2")
         elif tts_engine == "openai":
             # Use passed openai_voice, fallback to default if invalid
             voice = OPENAI_TTS_VOICES.get(openai_voice, OPENAI_TTS_VOICES["default"]) if openai_voice else "alloy"
@@ -404,15 +399,19 @@ class TTSService:
             def call_gradio():
                 import httpx
                 
-                # Pass HF token if provided (for private spaces)
-                client_kwargs = {}
-                if api_key:
-                    client_kwargs["hf_token"] = api_key
-                
                 # Set longer timeout for httpx (default is 10s which is too short for TTS)
-                client_kwargs["httpx_kwargs"] = {
+                httpx_kwargs = {
                     "timeout": httpx.Timeout(timeout_secs, connect=60.0)
                 }
+                
+                # Pass API key as Bearer token in Authorization header
+                if api_key:
+                    httpx_kwargs["headers"] = {
+                        "Authorization": f"Bearer {api_key}"
+                    }
+                    logger.info("Using Bearer token authentication")
+                
+                client_kwargs = {"httpx_kwargs": httpx_kwargs}
                 
                 client = Client(space_url, **client_kwargs)
                 # Multi-model API with all parameters:

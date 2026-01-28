@@ -54,10 +54,7 @@ const TTS_ENGINES = [
   { value: "edge-tts", label: "Edge TTS (Recommended)" },
   { value: "openai", label: "OpenAI TTS" },
   { value: "chatterbox-free", label: "Chatterbox Free" },
-  { value: "chatterbox-paid", label: "Chatterbox Paid" },
-  { value: "qwen3-tts", label: "Qwen3 TTS (Best Quality)" },
-  { value: "styletts2", label: "StyleTTS2 (Expressive)" },
-  { value: "xtts-v2", label: "XTTS v2 (Multilingual)" },
+  { value: "hf-tts-paid", label: "HuggingFace TTS Paid" },
   { value: "piper", label: "Piper TTS" },
   { value: "soprano", label: "Soprano TTS" },
 ];
@@ -175,7 +172,7 @@ export function SettingsTab() {
     enabled: defaultEngine === "openai",
   });
 
-  const isVoiceCloningEngine = ["chatterbox-free", "chatterbox-paid", "qwen3-tts", "styletts2", "xtts-v2"].includes(defaultEngine);
+  const isVoiceCloningEngine = ["chatterbox-free", "hf-tts-paid"].includes(defaultEngine);
   
   const { data: libraryVoicesData } = useQuery<LibraryVoice[]>({
     queryKey: ["/api/voice-library"],
@@ -427,9 +424,9 @@ export function SettingsTab() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Chatterbox Paid Model Settings</CardTitle>
+          <CardTitle>HuggingFace TTS Paid Settings</CardTitle>
           <CardDescription>
-            Configure the TTS model and parameters for Chatterbox Paid
+            Configure the TTS model and parameters for HuggingFace TTS Paid
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
