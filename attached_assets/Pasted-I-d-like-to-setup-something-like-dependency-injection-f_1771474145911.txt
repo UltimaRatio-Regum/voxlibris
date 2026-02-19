@@ -1,0 +1,11 @@
+I'd like to setup something like dependency injection for the TTS APIs.  Rather than the tool needing to have custom code for each different TTS API, for a new TTS engine, I should be able to add a URL to a config file or list somewhere, and then on startup, for each TTS API, the VoxLibris app (this app) will query the TTS API (with the URL as the root endpoint of the REST handler on the engine's side) using a GET request to a method named GetEngineDetails (that takes no parameters) to get details on capabilities, such as:
+1) suggested maximum length (number of seconds) per request
+2) options for return format (wav, mp3, etc.), both file type and sample rate/bit depth/number of channels
+3) Name of the TTS engine in the dropdown (how it should be referenced)
+4) Voice handling: whether or not voice cloning is supported, and if there is a "built-in" voice library to choose from, for each voice, a voice_id (some sort of unique identifier for each voice that gets passed to the  and voice_name
+
+Please specify a JSON schema to use to hold the above information along with the endpoint function name the VoxLibris will expect to exist in order to get engine details (we may add more engine parameters to return as the number/type of engines increases, but the JSON schema should only ever be appended to, so something like a name/value pair list of properties (like EngineName, SampleRate, MaxSecondsPerConversion, BitDepth, FileTypes) is probably sufficient, and the type of the value can be elementary or complex (like for FileTypes, an array containing one or more values from a set of options that VoxLibris will accept (the list of valid file types should select one or more items from ["mp3","wave-pcm","opus","flac"])
+
+Then, the documentation should detail the interface for the method that is called, using a POST request called ConvertTextToSpeech that accepts 
+
+3) options for emotion/prosody handling (this will likely be very engine specific, so the engine itself should be able to take as input for each request either: name of emotion to use to apply for prosody adjustments (from a fixed list that is specified in this documentation), and/or numeric intensity/pitch/speed adjustments.  VoxLibris should always pass both 

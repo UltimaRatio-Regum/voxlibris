@@ -5,15 +5,17 @@ Text to Audiobook Generator with Chatterbox TTS
 
 import os
 import re
+import json
 import uuid
 import logging
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from text_parser import TextParser
@@ -28,6 +30,8 @@ from models import (
     GenerateRequest,
     GenerateResponse,
 )
+from database import get_db_session, TTSEngineEndpoint, VoiceLibraryEntry
+from remote_tts_client import RemoteTTSClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -230,6 +234,280 @@ async def get_voice_library():
     voices.sort(key=lambda v: int(v["id"][1:]))
     logger.info(f"Found {len(voices)} voices in library")
     return voices
+
+
+class AddEngineRequest(BaseModel):
+    url: str
+    api_key: Optional[str] = None
+
+
+@app.get("/tts-engines")
+async def list_tts_engines():
+    """List all registered TTS engine endpoints from the database."""
+    db = get_db_session()
+    try:
+        engines = db.query(TTSEngineEndpoint).filter(TTSEngineEndpoint.is_active == True).all()
+        result = []
+        for e in engines:
+            result.append({
+                "id": e.id,
+                "engine_id": e.engine_id,
+                "engine_name": e.engine_name,
+                "base_url": e.base_url,
+                "has_api_key": bool(e.api_key),
+                "sample_rate": e.sample_rate,
+                "bit_depth": e.bit_depth,
+                "channels": e.channels,
+                "max_seconds_per_conversion": e.max_seconds_per_conversion,
+                "supports_voice_cloning": e.supports_voice_cloning,
+                "builtin_voices": json.loads(e.builtin_voices_json) if e.builtin_voices_json else [],
+                "supported_emotions": json.loads(e.supported_emotions_json) if e.supported_emotions_json else [],
+                "last_tested_at": e.last_tested_at.isoformat() if e.last_tested_at else None,
+                "last_test_success": e.last_test_success,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            })
+        return result
+    finally:
+        db.close()
+
+
+@app.post("/tts-engines")
+async def add_tts_engine(request: AddEngineRequest):
+    """Register a new TTS engine by URL. Queries GetEngineDetails and stores in DB."""
+    try:
+        client = RemoteTTSClient(request.url, request.api_key)
+        details = await client.get_engine_details()
+    except Exception as e:
+        logger.error(f"Failed to query engine at {request.url}: {e}")
+        raise HTTPException(status_code=400, detail=f"Could not reach engine: {str(e)}")
+
+    db = get_db_session()
+    try:
+        existing = db.query(TTSEngineEndpoint).filter(
+            TTSEngineEndpoint.engine_id == details.engine_id
+        ).first()
+        if existing:
+            existing.engine_name = details.engine_name
+            existing.base_url = request.url.rstrip("/")
+            existing.api_key = request.api_key
+            existing.sample_rate = details.sample_rate
+            existing.bit_depth = details.bit_depth
+            existing.channels = details.channels
+            existing.max_seconds_per_conversion = details.max_seconds_per_conversion
+            existing.supports_voice_cloning = details.supports_voice_cloning
+            existing.builtin_voices_json = json.dumps([
+                {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
+                for v in details.builtin_voices
+            ])
+            existing.supported_emotions_json = json.dumps(details.supported_emotions)
+            existing.extra_properties_json = json.dumps(details.extra_properties)
+            existing.is_active = True
+            existing.last_tested_at = datetime.utcnow()
+            existing.last_test_success = True
+            existing.updated_at = datetime.utcnow()
+            db.commit()
+            return {"status": "updated", "engine_id": details.engine_id, "engine_name": details.engine_name}
+        else:
+            entry = TTSEngineEndpoint(
+                id=str(uuid.uuid4()),
+                engine_id=details.engine_id,
+                engine_name=details.engine_name,
+                base_url=request.url.rstrip("/"),
+                api_key=request.api_key,
+                sample_rate=details.sample_rate,
+                bit_depth=details.bit_depth,
+                channels=details.channels,
+                max_seconds_per_conversion=details.max_seconds_per_conversion,
+                supports_voice_cloning=details.supports_voice_cloning,
+                builtin_voices_json=json.dumps([
+                    {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
+                    for v in details.builtin_voices
+                ]),
+                supported_emotions_json=json.dumps(details.supported_emotions),
+                extra_properties_json=json.dumps(details.extra_properties),
+                is_active=True,
+                last_tested_at=datetime.utcnow(),
+                last_test_success=True,
+            )
+            db.add(entry)
+            db.commit()
+            return {"status": "added", "engine_id": details.engine_id, "engine_name": details.engine_name}
+    finally:
+        db.close()
+
+
+@app.post("/tts-engines/{engine_id}/test")
+async def test_tts_engine(engine_id: str):
+    """Test connectivity to a registered TTS engine."""
+    db = get_db_session()
+    try:
+        entry = db.query(TTSEngineEndpoint).filter(
+            TTSEngineEndpoint.engine_id == engine_id
+        ).first()
+        if not entry:
+            raise HTTPException(status_code=404, detail="Engine not found")
+
+        try:
+            client = RemoteTTSClient(entry.base_url, entry.api_key)
+            details = await client.get_engine_details()
+            entry.last_tested_at = datetime.utcnow()
+            entry.last_test_success = True
+            entry.engine_name = details.engine_name
+            entry.builtin_voices_json = json.dumps([
+                {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
+                for v in details.builtin_voices
+            ])
+            entry.supported_emotions_json = json.dumps(details.supported_emotions)
+            entry.updated_at = datetime.utcnow()
+            db.commit()
+            return {"success": True, "engine_name": details.engine_name, "voices": len(details.builtin_voices)}
+        except Exception as e:
+            entry.last_tested_at = datetime.utcnow()
+            entry.last_test_success = False
+            entry.updated_at = datetime.utcnow()
+            db.commit()
+            return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
+
+@app.delete("/tts-engines/{engine_id}")
+async def remove_tts_engine(engine_id: str):
+    """Remove a registered TTS engine."""
+    db = get_db_session()
+    try:
+        entry = db.query(TTSEngineEndpoint).filter(
+            TTSEngineEndpoint.engine_id == engine_id
+        ).first()
+        if not entry:
+            raise HTTPException(status_code=404, detail="Engine not found")
+        db.delete(entry)
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.get("/voice-library-db")
+async def get_voice_library_db():
+    """Get all voices from the PostgreSQL voice library."""
+    db = get_db_session()
+    try:
+        voices = db.query(VoiceLibraryEntry).all()
+        result = []
+        for v in voices:
+            result.append({
+                "id": v.id,
+                "name": v.name,
+                "gender": v.gender,
+                "age": v.age,
+                "language": v.language,
+                "location": v.location,
+                "transcript": v.transcript,
+                "duration": v.duration,
+                "audioUrl": f"/voice-library-db/{v.id}/audio",
+                "altAudioUrl": f"/voice-library-db/{v.id}/alt-audio" if v.alt_audio_data else None,
+                "hasAudio": bool(v.audio_data),
+                "hasAltAudio": bool(v.alt_audio_data),
+            })
+        result.sort(key=lambda x: x["id"])
+        return result
+    finally:
+        db.close()
+
+
+@app.get("/voice-library-db/{voice_id}/audio")
+async def get_voice_audio(voice_id: str):
+    """Stream voice sample audio from the database."""
+    db = get_db_session()
+    try:
+        voice = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == voice_id).first()
+        if not voice or not voice.audio_data:
+            raise HTTPException(status_code=404, detail="Voice audio not found")
+        return Response(content=voice.audio_data, media_type="audio/wav")
+    finally:
+        db.close()
+
+
+@app.get("/voice-library-db/{voice_id}/alt-audio")
+async def get_voice_alt_audio(voice_id: str):
+    """Stream alternate voice sample audio from the database."""
+    db = get_db_session()
+    try:
+        voice = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == voice_id).first()
+        if not voice or not voice.alt_audio_data:
+            raise HTTPException(status_code=404, detail="Alternate voice audio not found")
+        return Response(content=voice.alt_audio_data, media_type="audio/wav")
+    finally:
+        db.close()
+
+
+@app.post("/voice-library-db")
+async def upload_voice_to_library(
+    name: str = Form(...),
+    gender: str = Form(...),
+    age: int = Form(0),
+    language: str = Form(""),
+    location: str = Form(""),
+    transcript: str = Form(""),
+    file: UploadFile = File(...),
+):
+    """Upload a voice sample to the PostgreSQL voice library."""
+    try:
+        audio_bytes = await file.read()
+        voice_id = f"custom_{uuid.uuid4().hex[:8]}"
+
+        duration = 0.0
+        try:
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+                tmp.write(audio_bytes)
+                tmp.flush()
+                duration = audio_processor.get_audio_duration(tmp.name)
+        except Exception:
+            pass
+
+        db = get_db_session()
+        try:
+            entry = VoiceLibraryEntry(
+                id=voice_id,
+                name=name,
+                gender=gender,
+                age=age,
+                language=language,
+                location=location,
+                transcript=transcript or None,
+                duration=duration,
+                audio_data=audio_bytes,
+            )
+            db.add(entry)
+            db.commit()
+            return {
+                "id": voice_id,
+                "name": name,
+                "gender": gender,
+                "duration": duration,
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to upload voice to library: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/voice-library-db/{voice_id}")
+async def delete_voice_from_library(voice_id: str):
+    """Delete a voice from the PostgreSQL voice library."""
+    db = get_db_session()
+    try:
+        voice = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == voice_id).first()
+        if not voice:
+            raise HTTPException(status_code=404, detail="Voice not found")
+        db.delete(voice)
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
 
 
 @app.get("/edge-voices")

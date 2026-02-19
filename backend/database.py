@@ -10,7 +10,7 @@ from enum import Enum
 
 from sqlalchemy import (
     Column, String, Integer, Float, DateTime, Text, ForeignKey, 
-    Enum as SQLEnum, LargeBinary, create_engine
+    Enum as SQLEnum, LargeBinary, Boolean, JSON, create_engine
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -119,6 +119,47 @@ class TTSSegment(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     job = relationship("TTSJob", back_populates="segments")
+
+
+class TTSEngineEndpoint(Base):
+    """Registered external TTS engine with its cached details."""
+    __tablename__ = "tts_engine_endpoints"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    engine_id = Column(String, nullable=False, unique=True)
+    engine_name = Column(String, nullable=False)
+    base_url = Column(String, nullable=False)
+    api_key = Column(String, nullable=True)
+    sample_rate = Column(Integer, nullable=False, default=24000)
+    bit_depth = Column(Integer, nullable=False, default=16)
+    channels = Column(Integer, nullable=False, default=1)
+    max_seconds_per_conversion = Column(Integer, nullable=False, default=30)
+    supports_voice_cloning = Column(Boolean, nullable=False, default=False)
+    builtin_voices_json = Column(Text, nullable=True)
+    supported_emotions_json = Column(Text, nullable=True)
+    extra_properties_json = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_tested_at = Column(DateTime, nullable=True)
+    last_test_success = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class VoiceLibraryEntry(Base):
+    """Voice sample stored in the database for voice cloning."""
+    __tablename__ = "voice_library"
+    
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    gender = Column(String, nullable=False)
+    age = Column(Integer, nullable=True)
+    language = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    transcript = Column(Text, nullable=True)
+    duration = Column(Float, nullable=False, default=0.0)
+    audio_data = Column(LargeBinary, nullable=False)
+    alt_audio_data = Column(LargeBinary, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 engine = None
