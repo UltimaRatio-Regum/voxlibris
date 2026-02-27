@@ -38,6 +38,9 @@ VoxLibris is a web application designed to transform plain text into expressive 
 - **File Handling**: Support for `.txt` and `.epub` files with automatic chapter extraction (using `ebooklib`).
 - **API Endpoints**: Comprehensive RESTful API for managing voices, text parsing, generating audiobooks, and monitoring job status.
 
+### Deployable Engine Endpoints (`engines/`)
+- **engines/xttsv2/**: HuggingFace Space (Docker SDK) serving Coqui XTTSv2 as a REST API implementing the VoxLibris TTS API Contract. Files: `app.py` (FastAPI), `Dockerfile`, `requirements.txt`, `README.md`. Supports voice cloning via base64 WAV, emotion prompting, speed/volume control, 16 languages. Deploy to HF Spaces, then register the URL in VoxLibris Settings.
+
 ## External Dependencies
 - **Microsoft Azure Neural TTS**: (via `edge-tts`)
 - **Soprano TTS**: (ekwek/Soprano-1.1-80M)
