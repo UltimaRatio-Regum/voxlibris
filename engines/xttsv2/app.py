@@ -4,9 +4,9 @@ import base64
 import tempfile
 import logging
 import wave
-import struct
 import numpy as np
 import torch
+import pyrubberband as pyrb
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import Response, JSONResponse
@@ -169,6 +169,10 @@ async def convert_text_to_speech(request: Request):
             )
 
         audio_np = np.array(audio, dtype=np.float32)
+
+        if req.pitch_adjust != 0.0:
+            semitones = req.pitch_adjust * 0.24
+            audio_np = pyrb.pitch_shift(audio_np, SAMPLE_RATE, semitones)
 
         vol_factor = req.volume / 75.0
         audio_np = audio_np * vol_factor

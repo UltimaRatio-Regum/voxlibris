@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     ffmpeg \
     git \
+    rubberband-cli \
+    librubberband-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 user
