@@ -40,6 +40,7 @@ VoxLibris is a web application designed to transform plain text into expressive 
 
 ### Deployable Engine Endpoints (`engines/`)
 - **engines/xttsv2/**: HuggingFace Space (Docker SDK) serving Coqui XTTSv2 as a REST API implementing the VoxLibris TTS API Contract. Files: `app.py` (FastAPI), `Dockerfile`, `requirements.txt`, `README.md`. Supports voice cloning via base64 WAV, emotion prompting, speed/volume control, 16 languages. Deploy to HF Spaces, then register the URL in VoxLibris Settings.
+- **engines/qwen3-tts/**: HuggingFace Space (Docker SDK) serving Qwen2.5-Omni-7B as a REST API implementing the VoxLibris TTS API Contract. Files: `app.py` (FastAPI), `Dockerfile`, `requirements.txt`, `README.md`. Built-in voices (Chelsie, Ethan), voice cloning via audio conditioning, emotion prompting, pyrubberband speed/pitch adjustment, 16 languages. Requires GPU (A10G+). Deploy to HF Spaces, then register the URL in VoxLibris Settings.
 
 ## External Dependencies
 - **Microsoft Azure Neural TTS**: (via `edge-tts`)
