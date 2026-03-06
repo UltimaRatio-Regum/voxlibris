@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Qwen3 TTS - Test Console</title>
+  <title>Qwen 2.5 Omni TTS - Test Console</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -17,7 +17,7 @@
     h1 {
       font-size: 1.75rem;
       font-weight: 700;
-      background: linear-gradient(135deg, #34d399, #059669);
+      background: linear-gradient(135deg, #60a5fa, #3b82f6);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       margin-bottom: 0.25rem;
@@ -35,7 +35,7 @@
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #34d399;
+      color: #60a5fa;
       margin-bottom: 1rem;
     }
     label {
@@ -57,7 +57,7 @@
       outline: none;
       transition: border-color 0.2s;
     }
-    textarea:focus, input:focus, select:focus { border-color: #059669; }
+    textarea:focus, input:focus, select:focus { border-color: #3b82f6; }
     textarea { resize: vertical; min-height: 100px; }
     .field { margin-bottom: 1rem; }
     .row { display: flex; gap: 1rem; }
@@ -82,46 +82,11 @@
       transition: all 0.2s;
     }
     .voice-source-toggle button.active {
-      background: #059669;
+      background: #3b82f6;
       color: white;
     }
     .voice-panel { display: none; }
     .voice-panel.active { display: block; }
-    .voice-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.5rem;
-    }
-    .voice-card {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      padding: 0.6rem 0.75rem;
-      border: 1px solid #2d2a3a;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .voice-card:hover { border-color: #059669; background: rgba(5,150,105,0.05); }
-    .voice-card.selected { border-color: #059669; background: rgba(5,150,105,0.1); }
-    .voice-card .radio {
-      width: 16px; height: 16px;
-      border: 2px solid #2d2a3a;
-      border-radius: 50%;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .voice-card.selected .radio { border-color: #059669; }
-    .voice-card.selected .radio::after {
-      content: '';
-      width: 8px; height: 8px;
-      background: #34d399;
-      border-radius: 50%;
-    }
-    .voice-card .voice-info .voice-name { font-weight: 600; font-size: 0.85rem; }
-    .voice-card .voice-info .voice-desc { font-size: 0.7rem; color: #9490a8; line-height: 1.3; }
     .file-upload {
       border: 2px dashed #2d2a3a;
       border-radius: 8px;
@@ -130,16 +95,47 @@
       cursor: pointer;
       transition: border-color 0.2s, background 0.2s;
     }
-    .file-upload:hover { border-color: #059669; background: rgba(5,150,105,0.05); }
+    .file-upload:hover { border-color: #3b82f6; background: rgba(59,130,246,0.05); }
     .file-upload.has-file { border-color: #22c55e; background: rgba(34,197,94,0.05); }
     .file-upload input { display: none; }
     .file-upload-text { font-size: 0.85rem; color: #9490a8; }
-    .file-upload-text strong { color: #34d399; }
+    .file-upload-text strong { color: #60a5fa; }
     .file-name { font-size: 0.8rem; color: #22c55e; margin-top: 0.5rem; }
+    .voice-card {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border: 1px solid #2d2a3a;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 0.5rem;
+    }
+    .voice-card:hover { border-color: #3b82f6; background: rgba(59,130,246,0.05); }
+    .voice-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+    .voice-card .radio {
+      width: 18px; height: 18px;
+      border: 2px solid #2d2a3a;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .voice-card.selected .radio { border-color: #3b82f6; }
+    .voice-card.selected .radio::after {
+      content: '';
+      width: 10px; height: 10px;
+      background: #3b82f6;
+      border-radius: 50%;
+    }
+    .voice-card .voice-info .voice-name { font-weight: 600; font-size: 0.9rem; }
+    .voice-card .voice-info .voice-desc { font-size: 0.75rem; color: #9490a8; }
     button.generate {
       width: 100%;
       padding: 0.85rem;
-      background: linear-gradient(135deg, #059669, #047857);
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
       color: white;
       border: none;
       border-radius: 8px;
@@ -182,7 +178,7 @@
       display: inline-block;
       width: 18px; height: 18px;
       border: 2px solid #2d2a3a;
-      border-top-color: #34d399;
+      border-top-color: #60a5fa;
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
       vertical-align: middle;
@@ -199,26 +195,17 @@
     }
     .health-badge.ok { background: rgba(34,197,94,0.15); color: #22c55e; }
     .health-badge.error { background: rgba(239,68,68,0.15); color: #ef4444; }
-    .health-badge.loading { background: rgba(52,211,153,0.15); color: #34d399; }
+    .health-badge.loading { background: rgba(96,165,250,0.15); color: #60a5fa; }
     .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem; }
-    .clone-note {
-      font-size: 0.75rem;
-      color: #9490a8;
-      margin-top: 0.5rem;
-      padding: 0.5rem 0.75rem;
-      background: rgba(52,211,153,0.05);
-      border-radius: 6px;
-      border: 1px solid rgba(52,211,153,0.1);
-    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header-row">
-      <h1>Qwen3 TTS Test Console</h1>
+      <h1>Qwen TTS Test Console</h1>
       <span id="healthBadge" class="health-badge loading">checking...</span>
     </div>
-    <p class="subtitle">Qwen3-TTS-12Hz-1.7B &mdash; 9 built-in voices + voice cloning</p>
+    <p class="subtitle">Qwen 2.5 Omni &mdash; Multi-voice TTS with voice cloning</p>
 
     <div class="card">
       <div class="card-title">Text Input</div>
@@ -232,25 +219,35 @@
       <div class="card-title">Voice Selection</div>
       <div class="voice-source-toggle">
         <button class="active" onclick="switchVoiceSource('builtin')">Built-in Voices</button>
-        <button onclick="switchVoiceSource('clone')">Voice Cloning</button>
+        <button onclick="switchVoiceSource('clone')">Upload Voice Sample</button>
       </div>
 
       <div id="builtinPanel" class="voice-panel active">
-        <div class="voice-grid" id="voiceGrid"></div>
+        <div class="voice-card selected" data-voice="Chelsie" onclick="selectVoice(this)">
+          <div class="radio"></div>
+          <div class="voice-info">
+            <div class="voice-name">Chelsie</div>
+            <div class="voice-desc">Default female voice, warm and clear</div>
+          </div>
+        </div>
+        <div class="voice-card" data-voice="Ethan" onclick="selectVoice(this)">
+          <div class="radio"></div>
+          <div class="voice-info">
+            <div class="voice-name">Ethan</div>
+            <div class="voice-desc">Male voice, confident and steady</div>
+          </div>
+        </div>
       </div>
 
       <div id="clonePanel" class="voice-panel">
         <div class="field">
-          <label>Upload a reference WAV file</label>
+          <label>Upload a WAV file (5-15 seconds of clear speech)</label>
           <div class="file-upload" id="dropZone">
             <input type="file" id="voiceFile" accept=".wav,audio/wav">
             <div class="file-upload-text">
               <strong>Click to upload</strong> or drag &amp; drop a WAV file
             </div>
             <div class="file-name" id="fileName"></div>
-          </div>
-          <div class="clone-note">
-            Voice cloning uses x-vector speaker embedding. For best results, use a 5-15 second clip of clear speech.
           </div>
         </div>
       </div>
@@ -270,10 +267,6 @@
             <option value="surprise">Surprise</option>
             <option value="excited">Excited</option>
             <option value="calm">Calm</option>
-            <option value="confused">Confused</option>
-            <option value="anxious">Anxious</option>
-            <option value="hopeful">Hopeful</option>
-            <option value="melancholy">Melancholy</option>
           </select>
         </div>
         <div class="field">
@@ -287,11 +280,11 @@
           <input type="number" id="volume" value="75" min="1" max="100">
         </div>
         <div class="field">
-          <label for="speed">Speed (-5 to 5)</label>
+          <label for="speed">Speed Adjust (-5 to 5)</label>
           <input type="number" id="speed" value="0" min="-5" max="5" step="0.5">
         </div>
         <div class="field">
-          <label for="pitch">Pitch (-5 to 5)</label>
+          <label for="pitch">Pitch Adjust (-5 to 5)</label>
           <input type="number" id="pitch" value="0" min="-5" max="5" step="0.5">
         </div>
       </div>
@@ -308,36 +301,9 @@
   </div>
 
   <script>
-    const voices = [
-      { id: "Ryan", name: "Ryan", desc: "Dynamic English male, strong rhythm" },
-      { id: "Aiden", name: "Aiden", desc: "Sunny American male, clear midrange" },
-      { id: "Vivian", name: "Vivian", desc: "Bright young Chinese female" },
-      { id: "Serena", name: "Serena", desc: "Warm, gentle Chinese female" },
-      { id: "Uncle_Fu", name: "Uncle Fu", desc: "Seasoned Chinese male, low timbre" },
-      { id: "Dylan", name: "Dylan", desc: "Youthful Chinese male, clear" },
-      { id: "Eric", name: "Eric", desc: "Lively Chinese male, husky" },
-      { id: "Ono_Anna", name: "Ono Anna", desc: "Playful Japanese female" },
-      { id: "Sohee", name: "Sohee", desc: "Warm Korean female" },
-    ];
-
     let voiceSource = 'builtin';
-    let selectedVoice = 'Ryan';
+    let selectedVoice = 'Chelsie';
     let voiceBase64 = null;
-
-    const voiceGrid = document.getElementById('voiceGrid');
-    voices.forEach(v => {
-      const card = document.createElement('div');
-      card.className = 'voice-card' + (v.id === selectedVoice ? ' selected' : '');
-      card.dataset.voice = v.id;
-      card.onclick = () => selectVoice(card);
-      card.innerHTML =
-        '<div class="radio"></div>' +
-        '<div class="voice-info">' +
-          '<div class="voice-name">' + v.name + '</div>' +
-          '<div class="voice-desc">' + v.desc + '</div>' +
-        '</div>';
-      voiceGrid.appendChild(card);
-    });
 
     function switchVoiceSource(source) {
       voiceSource = source;
@@ -358,7 +324,7 @@
     const fileNameEl = document.getElementById('fileName');
 
     dropZone.addEventListener('click', () => voiceFile.click());
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#059669'; });
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#3b82f6'; });
     dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
     dropZone.addEventListener('drop', e => {
       e.preventDefault();
@@ -429,7 +395,7 @@
         const url = URL.createObjectURL(blob);
         resultContent.innerHTML =
           '<audio controls autoplay src="' + url + '"></audio>' +
-          '<a class="download-link" href="' + url + '" download="qwen3_tts_output.wav">Download WAV</a>';
+          '<a class="download-link" href="' + url + '" download="qwen_tts_output.wav">Download WAV</a>';
       } catch (e) {
         resultContent.innerHTML = '<div class="error-box">Request failed: ' + e.message + '</div>';
       } finally {
@@ -443,11 +409,11 @@
       try {
         const resp = await fetch('/health');
         const data = await resp.json();
-        if (data.custom_voice_model_loaded && data.clone_model_loaded) {
-          badge.textContent = 'Models Ready';
+        if (data.model_loaded) {
+          badge.textContent = 'Model Ready';
           badge.className = 'health-badge ok';
         } else {
-          badge.textContent = 'Loading Models...';
+          badge.textContent = 'Loading Model...';
           badge.className = 'health-badge loading';
           setTimeout(checkHealth, 5000);
         }

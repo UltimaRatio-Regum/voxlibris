@@ -1,38 +1,45 @@
 ---
 title: VoxLibris Qwen3 TTS Engine
 emoji: 🗣️
-colorFrom: blue
-colorTo: purple
+colorFrom: green
+colorTo: emerald
 sdk: docker
 app_port: 7860
 pinned: false
 ---
 
-# VoxLibris Qwen 2.5 Omni TTS Engine
+# VoxLibris Qwen3 TTS Engine
 
-A HuggingFace Space that serves the Qwen2.5-Omni-7B model as a REST API for
-text-to-speech, implementing the
-[VoxLibris TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+A HuggingFace Space that serves Qwen3-TTS as a REST API for text-to-speech,
+implementing the [VoxLibris TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+
+Uses two Qwen3-TTS models:
+- **Qwen3-TTS-12Hz-1.7B-CustomVoice** for built-in speaker generation with instruct-based emotion control
+- **Qwen3-TTS-12Hz-1.7B-Base** for voice cloning via x-vector speaker embeddings
 
 ## Endpoints
 
 ### POST /GetEngineDetails
 
-Returns engine capabilities, built-in voices, supported emotions, and languages.
+Returns engine capabilities, 9 built-in voices, supported emotions, and languages.
 
 ### POST /ConvertTextToSpeech
 
 Converts text to speech. Supports:
-- Built-in voices (Chelsie, Ethan)
-- Voice cloning via base64-encoded WAV samples
-- Emotion prompting with intensity control
+- 9 built-in speakers (Ryan, Aiden, Vivian, Serena, Uncle Fu, Dylan, Eric, Ono Anna, Sohee)
+- Instruct-based emotion control mapped from the VoxLibris emotion set
+- Voice cloning via base64-encoded WAV reference audio (x-vector mode)
 - Speed adjustment via pyrubberband time-stretching
 - Pitch adjustment via pyrubberband pitch-shifting
 - Volume scaling
 
 ### GET /health
 
-Returns model loading status.
+Returns model loading status for both CustomVoice and Base models.
+
+### GET /
+
+Built-in testing frontend with voice selection, cloning upload, and parameter controls.
 
 ## Authentication
 
@@ -42,31 +49,34 @@ Leave `API_KEY` unset to disable authentication.
 
 ## Built-in Voices
 
-| ID | Name | Description |
-|----|------|-------------|
-| Chelsie | Chelsie | Default female voice, warm and clear |
-| Ethan | Ethan | Male voice, confident and steady |
+| ID | Name | Description | Native Language |
+|----|------|-------------|-----------------|
+| Vivian | Vivian | Bright, slightly edgy young female | Chinese |
+| Serena | Serena | Warm, gentle young female | Chinese |
+| Uncle_Fu | Uncle Fu | Seasoned male, low mellow timbre | Chinese |
+| Dylan | Dylan | Youthful male, clear and natural | Chinese (Beijing) |
+| Eric | Eric | Lively male, slightly husky brightness | Chinese (Sichuan) |
+| Ryan | Ryan | Dynamic male, strong rhythmic drive | English |
+| Aiden | Aiden | Sunny American male, clear midrange | English |
+| Ono_Anna | Ono Anna | Playful female, light and nimble | Japanese |
+| Sohee | Sohee | Warm female with rich emotion | Korean |
 
 ## Voice Cloning
 
-Qwen2.5-Omni supports voice cloning by conditioning on a reference audio sample.
-Send a base64-encoded WAV file in the `voice_to_clone_sample` field. A 5-15
-second clear speech sample works best.
-
-## Supported Languages
-
-en, zh, ja, ko, fr, de, es, it, pt, ru, ar, nl, pl, tr, vi, th
+Send a base64-encoded WAV file in the `voice_to_clone_sample` field.
+Uses x-vector speaker embedding extraction (no transcript needed).
+A 5-15 second clip of clear speech works best.
 
 ## Hardware Requirements
 
-This model is ~14 GB. A GPU with at least 16 GB VRAM is recommended.
-On HuggingFace Spaces, use an A10G or A100 instance.
+Loads two models (~3.4 GB total). A GPU with 8+ GB VRAM is recommended.
+On HuggingFace Spaces, use an L4 or A10G instance.
 
 ## Deployment
 
 1. Create a new HuggingFace Space with **Docker** SDK
-2. Select a GPU runtime (A10G Small recommended)
+2. Select a GPU runtime (L4 recommended)
 3. Upload the contents of this folder
 4. Set the `API_KEY` secret in Space settings (optional)
-5. The model downloads automatically on first startup (~14 GB)
+5. Models download automatically on first startup
 6. Register the Space URL in VoxLibris Settings under TTS Engine Management
