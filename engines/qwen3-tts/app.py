@@ -9,8 +9,9 @@ import torch
 import pyrubberband as pyrb
 import soundfile as sf
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -282,6 +283,12 @@ async def convert_text_to_speech(request: Request):
                 os.unlink(f)
             except OSError:
                 pass
+
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    html_path = Path(__file__).parent / "index.html"
+    return HTMLResponse(content=html_path.read_text())
 
 
 @app.get("/health")

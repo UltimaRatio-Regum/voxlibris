@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XTTSv2 TTS Engine - Test Console</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0d1a;
+      color: #e2e0eb;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #a78bfa, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.25rem;
+    }
+    .subtitle { color: #9490a8; font-size: 0.875rem; margin-bottom: 2rem; }
+    .card {
+      background: #1a1726;
+      border: 1px solid #2d2a3a;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #a78bfa;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #b0adc0;
+      margin-bottom: 0.35rem;
+    }
+    textarea, input[type="text"], input[type="number"], select {
+      width: 100%;
+      background: #12101e;
+      border: 1px solid #2d2a3a;
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      color: #e2e0eb;
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus, input:focus, select:focus { border-color: #7c3aed; }
+    textarea { resize: vertical; min-height: 100px; }
+    .field { margin-bottom: 1rem; }
+    .row { display: flex; gap: 1rem; }
+    .row > .field { flex: 1; }
+    .file-upload {
+      border: 2px dashed #2d2a3a;
+      border-radius: 8px;
+      padding: 1.25rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .file-upload:hover { border-color: #7c3aed; background: rgba(124,58,237,0.05); }
+    .file-upload.has-file { border-color: #22c55e; background: rgba(34,197,94,0.05); }
+    .file-upload input { display: none; }
+    .file-upload-text { font-size: 0.85rem; color: #9490a8; }
+    .file-upload-text strong { color: #a78bfa; }
+    .file-name { font-size: 0.8rem; color: #22c55e; margin-top: 0.5rem; }
+    button.generate {
+      width: 100%;
+      padding: 0.85rem;
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button.generate:hover { opacity: 0.9; }
+    button.generate:disabled { opacity: 0.5; cursor: not-allowed; }
+    .result-area { margin-top: 1.25rem; }
+    .result-area.hidden { display: none; }
+    audio { width: 100%; margin: 0.75rem 0; }
+    .download-link {
+      display: inline-block;
+      padding: 0.5rem 1rem;
+      background: #22c55e;
+      color: #0f0d1a;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .download-link:hover { opacity: 0.9; }
+    .error-box {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      padding: 0.85rem;
+      color: #fca5a5;
+      font-size: 0.85rem;
+    }
+    .status {
+      text-align: center;
+      padding: 1rem;
+      color: #9490a8;
+      font-size: 0.9rem;
+    }
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid #2d2a3a;
+      border-top-color: #a78bfa;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .health-badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 99px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .health-badge.ok { background: rgba(34,197,94,0.15); color: #22c55e; }
+    .health-badge.error { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .health-badge.loading { background: rgba(164,139,250,0.15); color: #a78bfa; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-row">
+      <h1>XTTSv2 Test Console</h1>
+      <span id="healthBadge" class="health-badge loading">checking...</span>
+    </div>
+    <p class="subtitle">Coqui XTTSv2 &mdash; Voice cloning TTS engine</p>
+
+    <div class="card">
+      <div class="card-title">Text Input</div>
+      <div class="field">
+        <label for="inputText">Text to speak</label>
+        <textarea id="inputText" placeholder="Enter the text you want to convert to speech...">The quick brown fox jumped over the lazy dog.</textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Voice Sample (for cloning)</div>
+      <div class="field">
+        <label>Upload a WAV file (6-15 seconds of clear speech works best)</label>
+        <div class="file-upload" id="dropZone">
+          <input type="file" id="voiceFile" accept=".wav,audio/wav">
+          <div class="file-upload-text">
+            <strong>Click to upload</strong> or drag &amp; drop a WAV file
+          </div>
+          <div class="file-name" id="fileName"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Parameters</div>
+      <div class="row">
+        <div class="field">
+          <label for="emotion">Emotion</label>
+          <select id="emotion">
+            <option value="neutral" selected>Neutral</option>
+            <option value="happy">Happy</option>
+            <option value="sad">Sad</option>
+            <option value="angry">Angry</option>
+            <option value="fear">Fear</option>
+            <option value="surprise">Surprise</option>
+            <option value="excited">Excited</option>
+            <option value="calm">Calm</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="intensity">Intensity (1-100)</label>
+          <input type="number" id="intensity" value="50" min="1" max="100">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="volume">Volume (1-100)</label>
+          <input type="number" id="volume" value="75" min="1" max="100">
+        </div>
+        <div class="field">
+          <label for="speed">Speed Adjust (-5 to 5)</label>
+          <input type="number" id="speed" value="0" min="-5" max="5" step="0.5">
+        </div>
+        <div class="field">
+          <label for="pitch">Pitch Adjust (-5 to 5)</label>
+          <input type="number" id="pitch" value="0" min="-5" max="5" step="0.5">
+        </div>
+      </div>
+    </div>
+
+    <button class="generate" id="generateBtn" onclick="generate()">Generate Speech</button>
+
+    <div class="result-area hidden" id="resultArea">
+      <div class="card">
+        <div class="card-title">Result</div>
+        <div id="resultContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const voiceFile = document.getElementById('voiceFile');
+    const fileName = document.getElementById('fileName');
+    let voiceBase64 = null;
+
+    dropZone.addEventListener('click', () => voiceFile.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#7c3aed'; });
+    dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.style.borderColor = '';
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    voiceFile.addEventListener('change', () => { if (voiceFile.files.length) handleFile(voiceFile.files[0]); });
+
+    function handleFile(file) {
+      if (!file.name.toLowerCase().endsWith('.wav')) {
+        alert('Please upload a WAV file.');
+        return;
+      }
+      fileName.textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+      dropZone.classList.add('has-file');
+      const reader = new FileReader();
+      reader.onload = () => {
+        const arrayBuf = reader.result;
+        const bytes = new Uint8Array(arrayBuf);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        voiceBase64 = btoa(binary);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    async function generate() {
+      const btn = document.getElementById('generateBtn');
+      const resultArea = document.getElementById('resultArea');
+      const resultContent = document.getElementById('resultContent');
+      const text = document.getElementById('inputText').value.trim();
+
+      if (!text) { alert('Please enter some text.'); return; }
+
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+      resultArea.classList.remove('hidden');
+      resultContent.innerHTML = '<div class="status"><span class="spinner"></span> Generating audio...</div>';
+
+      const payload = {
+        input_text: text,
+        emotion_set: [document.getElementById('emotion').value],
+        intensity: parseInt(document.getElementById('intensity').value) || 50,
+        volume: parseInt(document.getElementById('volume').value) || 75,
+        speed_adjust: parseFloat(document.getElementById('speed').value) || 0,
+        pitch_adjust: parseFloat(document.getElementById('pitch').value) || 0,
+      };
+      if (voiceBase64) payload.voice_to_clone_sample = voiceBase64;
+
+      try {
+        const resp = await fetch('/ConvertTextToSpeech', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          resultContent.innerHTML = '<div class="error-box"><strong>' + (err.error_code || 'Error') + ':</strong> ' + err.error + (err.details ? '<br>' + err.details : '') + '</div>';
+          return;
+        }
+
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        resultContent.innerHTML =
+          '<audio controls autoplay src="' + url + '"></audio>' +
+          '<a class="download-link" href="' + url + '" download="xttsv2_output.wav">Download WAV</a>';
+      } catch (e) {
+        resultContent.innerHTML = '<div class="error-box">Request failed: ' + e.message + '</div>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate Speech';
+      }
+    }
+
+    async function checkHealth() {
+      const badge = document.getElementById('healthBadge');
+      try {
+        const resp = await fetch('/health');
+        const data = await resp.json();
+        if (data.model_loaded) {
+          badge.textContent = 'Model Ready';
+          badge.className = 'health-badge ok';
+        } else {
+          badge.textContent = 'Loading Model...';
+          badge.className = 'health-badge loading';
+          setTimeout(checkHealth, 5000);
+        }
+      } catch {
+        badge.textContent = 'Offline';
+        badge.className = 'health-badge error';
+        setTimeout(checkHealth, 10000);
+      }
+    }
+    checkHealth();
+  </script>
+</body>
+</html>
