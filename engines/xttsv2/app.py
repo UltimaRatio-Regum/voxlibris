@@ -32,6 +32,13 @@ tts_model = None
 
 def load_model():
     global tts_model
+    import torch.serialization
+    _original_load = torch.load
+    def _patched_load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _original_load(*args, **kwargs)
+    torch.load = _patched_load
+
     from TTS.api import TTS
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

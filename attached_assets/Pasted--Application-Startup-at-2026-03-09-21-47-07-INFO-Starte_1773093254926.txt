@@ -1,0 +1,52 @@
+===== Application Startup at 2026-03-09 21:47:07 =====
+
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:xttsv2-engine:Loading XTTSv2 model on cuda...
+ > Downloading model to /home/user/.local/share/tts/tts_models--multilingual--multi-dataset--xtts_v2
+  0%|          | 0.00/4.37k [00:00<?, ?iB/s]100%|██████████| 1.87G/1.87G [00:33<00:00, 55.4MiB/s]
+  0%|          | 0.00/361k [00:00<?, ?iB/s]100%|██████████| 4.37k/4.37k [00:00<00:00, 20.0kiB/s]
+
+  0%|          | 0.00/32.0 [00:00<?, ?iB/s]100%|██████████| 361k/361k [00:00<00:00, 1.55MiB/s]
+  0%|          | 0.00/7.75M [00:00<?, ?iB/s]100%|██████████| 32.0/32.0 [00:00<00:00, 123iB/s]
+ > Model's license - CPML
+ > Check https://coqui.ai/cpml.txt for more info.
+ > Using model: xtts
+  0%|          | 1.02k/7.75M [00:00<31:24, 4.11kiB/s] 68%|██████▊   | 5.26M/7.75M [00:00<00:00, 19.2MiB/s]ERROR:    Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 694, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/usr/local/lib/python3.11/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app.py", line 45, in lifespan
+    load_model()
+  File "/app/app.py", line 39, in load_model
+    tts_model = TTS(model_name=MODEL_NAME, progress_bar=True).to(device)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 74, in __init__
+    self.load_tts_model_by_name(model_name, gpu)
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 177, in load_tts_model_by_name
+    self.synthesizer = Synthesizer(
+                       ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/synthesizer.py", line 109, in __init__
+    self._load_tts_from_dir(model_dir, use_cuda)
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/synthesizer.py", line 164, in _load_tts_from_dir
+    self.tts_model.load_checkpoint(config, checkpoint_dir=model_dir, eval=True)
+  File "/usr/local/lib/python3.11/site-packages/TTS/tts/models/xtts.py", line 771, in load_checkpoint
+    checkpoint = self.get_compatible_checkpoint_state_dict(model_path)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/tts/models/xtts.py", line 714, in get_compatible_checkpoint_state_dict
+    checkpoint = load_fsspec(model_path, map_location=torch.device("cpu"))["model"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/io.py", line 54, in load_fsspec
+    return torch.load(f, map_location=map_location, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/torch/serialization.py", line 1548, in load
+    raise pickle.UnpicklingError(_get_wo_message(str(e))) from None
+_pickle.UnpicklingError: Weights only load failed. This file can still be loaded, to do so you have two options, do those steps only if you trust the source of the checkpoint. 
+	(1) In PyTorch 2.6, we changed the default value of the `weights_only` argument in `torch.load` from `False` to `True`. Re-running `torch.load` with `weights_only` set to `False` will likely succeed, but it can result in arbitrary code execution. Do it only if you got the file from a trusted source.
+	(2) Alternatively, to load with `weights_only=True` please check the recommended steps in the following error message.
+	WeightsUnpickler error: Unsupported global: GLOBAL TTS.tts.configs.xtts_config.XttsConfig was not an allowed global by default. Please use `torch.serialization.add_safe_globals([TTS.tts.configs.xtts_config.XttsConfig])` or the `torch.serialization.safe_globals([TTS.tts.configs.xtts_config.XttsConfig])` context manager to allowlist this global if you trust this class/function.
+
+Check the documentation of torch.load to learn more about types accepted by default with weights_only https://pytorch.org/docs/stable/generated/torch.load.html.
