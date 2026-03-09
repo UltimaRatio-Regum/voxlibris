@@ -102,10 +102,7 @@ async def get_engine_details(request: Request):
         "max_seconds_per_conversion": MAX_SECONDS,
         "supports_voice_cloning": True,
         "builtin_voices": [],
-        "supported_emotions": [
-            "neutral", "happy", "sad", "angry", "fear",
-            "surprise", "excited", "calm"
-        ],
+        "supported_emotions": [],
         "extra_properties": {
             "model": MODEL_NAME,
             "languages": [
@@ -155,13 +152,7 @@ async def convert_text_to_speech(request: Request):
         speed = 1.0 + (req.speed_adjust / 100.0)
         speed = max(0.5, min(2.0, speed))
 
-        emotion_prompt = ""
-        if req.emotion_set and req.emotion_set[0] != "neutral":
-            dominant = req.emotion_set[0]
-            intensity_word = "slightly" if req.intensity < 33 else ("very" if req.intensity > 66 else "")
-            emotion_prompt = f"[{intensity_word} {dominant}] " if intensity_word else f"[{dominant}] "
-
-        synth_text = emotion_prompt + req.input_text
+        synth_text = req.input_text
 
         language = "en"
 
