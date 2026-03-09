@@ -23,8 +23,7 @@ USER user
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/app/.cache/huggingface
 ENV COQUI_TOS_AGREED=1
-ENV OMP_NUM_THREADS=4
 
 EXPOSE 7860
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "OMP_NUM_THREADS=4 exec uvicorn app:app --host 0.0.0.0 --port 7860"]
