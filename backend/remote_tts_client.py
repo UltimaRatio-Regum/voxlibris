@@ -52,9 +52,20 @@ class TTSRequest:
     pitch_adjust: float = 0.0
 
 
+def normalize_hf_spaces_url(url: str) -> str:
+    import re
+    url = url.rstrip("/")
+    m = re.match(r"https?://huggingface\.co/spaces/([^/]+)/([^/]+)(?:/.*)?$", url)
+    if m:
+        owner = m.group(1)
+        space = m.group(2)
+        return f"https://{owner}-{space}.hf.space"
+    return url
+
+
 class RemoteTTSClient:
     def __init__(self, base_url: str, api_key: Optional[str] = None):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = normalize_hf_spaces_url(base_url.rstrip("/"))
         self.api_key = api_key
 
     def _headers(self) -> Dict[str, str]:
