@@ -1,0 +1,80 @@
+
+libgomp: Invalid value for environment variable OMP_NUM_THREADS
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:xttsv2-engine:Loading XTTSv2 model on cuda...
+ > You must confirm the following:
+ | > "I have purchased a commercial license from Coqui: licensing@coqui.ai"
+ | > "Otherwise, I agree to the terms of the non-commercial CPML: https://coqui.ai/cpml" - [y/n]
+ERROR:    Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 694, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/usr/local/lib/python3.11/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app.py", line 42, in lifespan
+    load_model()
+  File "/app/app.py", line 36, in load_model
+    tts_model = TTS(model_name=MODEL_NAME, progress_bar=True).to(device)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 74, in __init__
+    self.load_tts_model_by_name(model_name, gpu)
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 171, in load_tts_model_by_name
+    model_path, config_path, vocoder_path, vocoder_config_path, model_dir = self.download_model_by_name(
+                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 129, in download_model_by_name
+    model_path, config_path, model_item = self.manager.download_model(model_name)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/manage.py", line 411, in download_model
+    self.create_dir_and_download_model(model_name, model_item, output_path)
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/manage.py", line 337, in create_dir_and_download_model
+    if not self.ask_tos(output_path):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/manage.py", line 316, in ask_tos
+    answer = input(" | | > ")
+             ^^^^^^^^^^^^^^^^
+EOFError: EOF when reading a line
+
+ERROR:    Application startup failed. Exiting.
+ | | > 
+
+libgomp: Invalid value for environment variable OMP_NUM_THREADS
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:xttsv2-engine:Loading XTTSv2 model on cuda...
+ > You must confirm the following:
+ | > "I have purchased a commercial license from Coqui: licensing@coqui.ai"
+ | > "Otherwise, I agree to the terms of the non-commercial CPML: https://coqui.ai/cpml" - [y/n]
+ERROR:    Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 694, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/usr/local/lib/python3.11/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app.py", line 42, in lifespan
+    load_model()
+  File "/app/app.py", line 36, in load_model
+    tts_model = TTS(model_name=MODEL_NAME, progress_bar=True).to(device)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 74, in __init__
+    self.load_tts_model_by_name(model_name, gpu)
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 171, in load_tts_model_by_name
+    model_path, config_path, vocoder_path, vocoder_config_path, model_dir = self.download_model_by_name(
+                                                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/api.py", line 129, in download_model_by_name
+    model_path, config_path, model_item = self.manager.download_model(model_name)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/manage.py", line 411, in download_model
+    self.create_dir_and_download_model(model_name, model_item, output_path)
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/manage.py", line 337, in create_dir_and_download_model
+    if not self.ask_tos(output_path):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/TTS/utils/manage.py", line 316, in ask_tos
+    answer = input(" | | > ")
+             ^^^^^^^^^^^^^^^^
+EOFError: EOF when reading a line
+
+ERROR:    Application startup failed. Exiting.
+ | | > 
