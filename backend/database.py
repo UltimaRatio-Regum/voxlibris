@@ -162,6 +162,18 @@ class VoiceLibraryEntry(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class CustomVoice(Base):
+    """User-uploaded custom voice sample, stored as a blob in the database."""
+    __tablename__ = "custom_voices"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    audio_data = Column(LargeBinary, nullable=False)
+    file_ext = Column(String, nullable=False, default=".wav")
+    duration = Column(Float, nullable=False, default=0.0)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 engine = None
 SessionLocal = None
 

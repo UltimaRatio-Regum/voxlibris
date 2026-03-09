@@ -265,5 +265,11 @@ export async function registerRoutes(
     pathRewrite: (path, req) => '/voice_library' + path,
   }));
 
+  app.use('/custom-voices', createProxyMiddleware({
+    target: PYTHON_BACKEND_URL,
+    changeOrigin: true,
+    pathRewrite: (path, req) => '/custom-voices' + path,
+  }));
+
   return httpServer;
 }

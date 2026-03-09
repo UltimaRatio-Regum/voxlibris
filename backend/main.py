@@ -30,7 +30,7 @@ from models import (
     GenerateRequest,
     GenerateResponse,
 )
-from database import get_db_session, TTSEngineEndpoint, VoiceLibraryEntry
+from database import get_db_session, TTSEngineEndpoint, VoiceLibraryEntry, CustomVoice
 from remote_tts_client import RemoteTTSClient
 
 logging.basicConfig(level=logging.INFO)
@@ -65,6 +65,27 @@ tts_service = TTSService()
 voice_samples: dict[str, VoiceSample] = {}
 
 
+def _load_custom_voices_from_db():
+    """Load all custom voices from the database into the in-memory dict."""
+    try:
+        db = get_db_session()
+        try:
+            voices = db.query(CustomVoice).all()
+            for v in voices:
+                voice_samples[v.id] = VoiceSample(
+                    id=v.id,
+                    name=v.name,
+                    audioUrl=f"/custom-voices/{v.id}/audio",
+                    duration=v.duration,
+                    createdAt=v.created_at.isoformat() if v.created_at else "",
+                )
+            logger.info(f"Loaded {len(voices)} custom voices from database")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Could not load custom voices from DB: {e}")
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -82,46 +103,116 @@ async def upload_voice(
     name: str = Form(...),
     file: UploadFile = File(...),
 ):
-    """Upload a voice sample for cloning"""
+    """Upload a voice sample for cloning, persisted to database"""
     try:
         voice_id = str(uuid.uuid4())
         file_ext = Path(file.filename).suffix if file.filename else ".wav"
-        file_path = VOICES_DIR / f"{voice_id}{file_ext}"
-        
         content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-        
-        duration = audio_processor.get_audio_duration(str(file_path))
-        
+
+        duration = 0.0
+        try:
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=file_ext, delete=True) as tmp:
+                tmp.write(content)
+                tmp.flush()
+                duration = audio_processor.get_audio_duration(tmp.name)
+        except Exception:
+            pass
+
+        db = get_db_session()
+        try:
+            entry = CustomVoice(
+                id=voice_id,
+                name=name,
+                audio_data=content,
+                file_ext=file_ext,
+                duration=duration,
+            )
+            db.add(entry)
+            db.commit()
+        finally:
+            db.close()
+
         sample = VoiceSample(
             id=voice_id,
             name=name,
-            audioUrl=f"/uploads/voices/{voice_id}{file_ext}",
+            audioUrl=f"/custom-voices/{voice_id}/audio",
             duration=duration,
-            createdAt=str(uuid.uuid4())[:10],
+            createdAt=datetime.utcnow().isoformat(),
         )
         voice_samples[voice_id] = sample
-        
-        logger.info(f"Uploaded voice sample: {name} ({duration:.1f}s)")
+
+        logger.info(f"Uploaded custom voice: {name} ({duration:.1f}s)")
         return sample.model_dump()
     except Exception as e:
         logger.error(f"Failed to upload voice: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/custom-voices/{voice_id}/audio")
+async def get_custom_voice_audio(voice_id: str):
+    """Stream custom voice audio from database"""
+    db = get_db_session()
+    try:
+        voice = db.query(CustomVoice).filter(CustomVoice.id == voice_id).first()
+        if not voice:
+            raise HTTPException(status_code=404, detail="Voice not found")
+        media_type = "audio/wav" if voice.file_ext in [".wav", ""] else f"audio/{voice.file_ext.lstrip('.')}"
+        return Response(content=voice.audio_data, media_type=media_type)
+    finally:
+        db.close()
+
+
+@app.get("/custom-voices")
+async def list_custom_voices():
+    """List all custom voices from the database"""
+    db = get_db_session()
+    try:
+        voices = db.query(CustomVoice).order_by(CustomVoice.created_at.desc()).all()
+        return [
+            {
+                "id": v.id,
+                "name": v.name,
+                "duration": v.duration,
+                "audioUrl": f"/custom-voices/{v.id}/audio",
+                "createdAt": v.created_at.isoformat() if v.created_at else "",
+            }
+            for v in voices
+        ]
+    finally:
+        db.close()
+
+
+@app.put("/custom-voices/{voice_id}")
+async def rename_custom_voice(voice_id: str, name: str = Form(...)):
+    """Rename a custom voice"""
+    db = get_db_session()
+    try:
+        voice = db.query(CustomVoice).filter(CustomVoice.id == voice_id).first()
+        if not voice:
+            raise HTTPException(status_code=404, detail="Voice not found")
+        voice.name = name
+        db.commit()
+        if voice_id in voice_samples:
+            voice_samples[voice_id].name = name
+        return {"success": True, "name": name}
+    finally:
+        db.close()
+
+
 @app.delete("/voices/{voice_id}")
 async def delete_voice(voice_id: str):
-    """Delete a voice sample"""
-    if voice_id not in voice_samples:
-        raise HTTPException(status_code=404, detail="Voice not found")
-    
-    sample = voice_samples.pop(voice_id)
-    file_path = UPLOAD_DIR / sample.audioUrl.lstrip("/uploads/")
-    if file_path.exists():
-        file_path.unlink()
-    
-    return {"success": True}
+    """Delete a voice sample from database"""
+    db = get_db_session()
+    try:
+        voice = db.query(CustomVoice).filter(CustomVoice.id == voice_id).first()
+        if voice:
+            db.delete(voice)
+            db.commit()
+        voice_samples.pop(voice_id, None)
+        return {"success": True}
+    finally:
+        db.close()
 
 
 def format_location(location: str, language: str) -> str:
@@ -877,25 +968,51 @@ Return ONLY valid JSON."""
         return ParseTextResponse(segments=segments, detectedSpeakers=speakers)
 
 
+def _resolve_voice_files() -> dict[str, str]:
+    """Resolve all voice files: custom voices from DB (written to temp files),
+    library voices from filesystem, and DB voice library entries."""
+    import tempfile
+    voice_files = {}
+
+    db = get_db_session()
+    try:
+        custom = db.query(CustomVoice).all()
+        for v in custom:
+            tmp = tempfile.NamedTemporaryFile(suffix=v.file_ext or ".wav", delete=False)
+            tmp.write(v.audio_data)
+            tmp.flush()
+            tmp.close()
+            voice_files[v.id] = tmp.name
+
+        db_voices = db.query(VoiceLibraryEntry).all()
+        for v in db_voices:
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            tmp.write(v.audio_data)
+            tmp.flush()
+            tmp.close()
+            voice_files[f"library:{v.id}"] = tmp.name
+    finally:
+        db.close()
+
+    if VOICE_LIBRARY_DIR.exists():
+        for wav_file in VOICE_LIBRARY_DIR.glob("*_mic1.wav"):
+            vid = wav_file.stem.replace("_mic1", "")
+            key = f"library:{vid}"
+            if key not in voice_files:
+                voice_files[key] = str(wav_file)
+
+    return voice_files
+
+
 @app.post("/generate")
 async def generate_audio(request: GenerateRequest):
     """Generate audiobook from parsed segments"""
     try:
         output_id = str(uuid.uuid4())
         output_path = OUTPUT_DIR / f"{output_id}.wav"
-        
-        voice_files = {}
-        
-        # Add uploaded voice samples
-        for voice_id, sample in voice_samples.items():
-            voice_files[voice_id] = str(UPLOAD_DIR / sample.audioUrl.lstrip("/uploads/"))
-        
-        # Add library voices (with library: prefix)
-        if VOICE_LIBRARY_DIR.exists():
-            for wav_file in VOICE_LIBRARY_DIR.glob("*_mic1.wav"):
-                voice_id = wav_file.stem.replace("_mic1", "")  # e.g., "p226"
-                voice_files[f"library:{voice_id}"] = str(wav_file)
-        
+
+        voice_files = _resolve_voice_files()
+
         await tts_service.generate_audiobook_async(
             segments=request.segments,
             config=request.config,
@@ -927,18 +1044,8 @@ async def generate_audio_stream(request: GenerateRequest):
             output_id = str(uuid.uuid4())
             output_path = OUTPUT_DIR / f"{output_id}.wav"
             
-            voice_files = {}
-            
-            # Add uploaded voice samples
-            for voice_id, sample in voice_samples.items():
-                voice_files[voice_id] = str(UPLOAD_DIR / sample.audioUrl.lstrip("/uploads/"))
-            
-            # Add library voices (with library: prefix)
-            if VOICE_LIBRARY_DIR.exists():
-                for wav_file in VOICE_LIBRARY_DIR.glob("*_mic1.wav"):
-                    voice_id = wav_file.stem.replace("_mic1", "")
-                    voice_files[f"library:{voice_id}"] = str(wav_file)
-            
+            voice_files = _resolve_voice_files()
+
             # Progress callback that puts events in queue
             def progress_callback(current: int, total: int, message: str):
                 asyncio.get_event_loop().call_soon_threadsafe(
@@ -1018,8 +1125,9 @@ init_database()
 
 @app.on_event("startup")
 async def startup_event():
-    """Run cleanup loop on startup."""
+    """Run cleanup loop on startup and load custom voices."""
     import asyncio
+    _load_custom_voices_from_db()
     asyncio.create_task(run_cleanup_loop())
 
 

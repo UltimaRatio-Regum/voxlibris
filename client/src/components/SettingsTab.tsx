@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, RotateCcw, Volume2, Gauge, Music, Zap, Plus, Trash2, RefreshCw, Play, Upload, Server, Mic } from "lucide-react";
+import { Save, RotateCcw, Volume2, Gauge, Music, Zap, Plus, Trash2, RefreshCw, Play, Pause, Upload, Server, Mic, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,9 +22,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
 import { TTS_ENGINES, isVoiceCloningEngine } from "@/lib/tts-engines";
-import type { TTSEngine, LibraryVoice, EdgeVoice, OpenAIVoice } from "@shared/schema";
+import type { TTSEngine, LibraryVoice, EdgeVoice } from "@shared/schema";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ProsodySettings {
   pitch: Record<string, number>;
@@ -93,6 +103,290 @@ const DEFAULT_PROSODY: ProsodySettings = {
     "disgusted", "excited", "calm", "anxious", "hopeful", "melancholy"
   ],
 };
+
+interface CustomVoiceEntry {
+  id: string;
+  name: string;
+  duration: number;
+  audioUrl: string;
+  createdAt: string;
+}
+
+function CustomVoicesCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+
+  const { data: customVoices = [], isLoading, isError } = useQuery<CustomVoiceEntry[]>({
+    queryKey: ["/api/custom-voices"],
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async ({ name, file }: { name: string; file: File }) => {
+      const formData = new FormData();
+      formData.append("name", name);
+      formData.append("file", file);
+      const res = await fetch("/api/voices/upload", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-voices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/voices"] });
+      setIsDialogOpen(false);
+      setNewName("");
+      setSelectedFile(null);
+      toast({ title: "Voice uploaded", description: "Custom voice saved successfully." });
+    },
+    onError: () => {
+      toast({ title: "Upload failed", description: "Could not upload the voice sample.", variant: "destructive" });
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const formData = new FormData();
+      formData.append("name", name);
+      const res = await fetch(`/api/custom-voices/${id}`, { method: "PUT", body: formData });
+      if (!res.ok) throw new Error("Rename failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-voices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/voices"] });
+      setEditingId(null);
+      toast({ title: "Voice renamed" });
+    },
+    onError: () => {
+      toast({ title: "Rename failed", description: "Could not rename the voice.", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/voices/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-voices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/voices"] });
+      toast({ title: "Voice deleted" });
+    },
+    onError: () => {
+      toast({ title: "Delete failed", description: "Could not delete the voice.", variant: "destructive" });
+    },
+  });
+
+  const togglePlay = (voice: CustomVoiceEntry) => {
+    if (playingId === voice.id) {
+      audioRef.current?.pause();
+      setPlayingId(null);
+    } else {
+      if (audioRef.current) audioRef.current.pause();
+      audioRef.current = new Audio(voice.audioUrl);
+      audioRef.current.onended = () => setPlayingId(null);
+      audioRef.current.onerror = () => setPlayingId(null);
+      audioRef.current.play().catch(() => setPlayingId(null));
+      setPlayingId(voice.id);
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Mic className="h-5 w-5" />
+              Custom Voices
+            </CardTitle>
+            <CardDescription>
+              Upload and manage custom voice samples for voice cloning
+            </CardDescription>
+          </div>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" data-testid="button-add-custom-voice">
+                <Plus className="h-4 w-4 mr-2" />
+                Upload Voice
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upload Custom Voice</DialogTitle>
+                <DialogDescription>
+                  Upload a 7-20 second audio clip for voice cloning. Clear recordings work best.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="custom-voice-name">Voice Name</Label>
+                  <Input
+                    id="custom-voice-name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="e.g., Deep Narrator, Female Lead"
+                    data-testid="input-custom-voice-name"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Audio File</Label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    data-testid="input-custom-voice-file"
+                  />
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => fileInputRef.current?.click()}
+                    data-testid="button-select-custom-voice-file"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    {selectedFile ? selectedFile.name : "Select audio file..."}
+                  </Button>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  onClick={() => {
+                    if (selectedFile && newName.trim()) {
+                      uploadMutation.mutate({ name: newName.trim(), file: selectedFile });
+                    }
+                  }}
+                  disabled={!selectedFile || !newName.trim() || uploadMutation.isPending}
+                  data-testid="button-upload-custom-voice"
+                >
+                  {uploadMutation.isPending ? "Uploading..." : "Upload Voice"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <div className="animate-pulse">Loading custom voices...</div>
+          </div>
+        ) : isError ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <p className="text-sm text-destructive">Failed to load custom voices</p>
+          </div>
+        ) : customVoices.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Volume2 className="h-10 w-10 mx-auto mb-3 opacity-50" />
+            <p className="text-sm">No custom voices yet</p>
+            <p className="text-xs mt-1">Upload a voice sample to get started with voice cloning</p>
+          </div>
+        ) : (
+          <ScrollArea className={customVoices.length > 5 ? "h-[300px]" : ""}>
+            <div className="space-y-2">
+              {customVoices.map((voice) => (
+                <div
+                  key={voice.id}
+                  className="flex items-center gap-3 p-3 rounded-md border bg-muted/50"
+                  data-testid={`custom-voice-${voice.id}`}
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => togglePlay(voice)}
+                    data-testid={`button-play-custom-${voice.id}`}
+                  >
+                    {playingId === voice.id ? (
+                      <Pause className="h-4 w-4" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <div className="flex-1 min-w-0">
+                    {editingId === voice.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="h-7 text-sm"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && editName.trim()) {
+                              renameMutation.mutate({ id: voice.id, name: editName.trim() });
+                            }
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                          data-testid={`input-rename-custom-${voice.id}`}
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            if (editName.trim()) renameMutation.mutate({ id: voice.id, name: editName.trim() });
+                          }}
+                          data-testid={`button-save-rename-${voice.id}`}
+                        >
+                          <Save className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="font-medium truncate text-sm" data-testid={`text-custom-voice-name-${voice.id}`}>
+                          {voice.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDuration(voice.duration)}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => {
+                      setEditingId(voice.id);
+                      setEditName(voice.name);
+                    }}
+                    data-testid={`button-rename-custom-${voice.id}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-destructive"
+                    onClick={() => deleteMutation.mutate(voice.id)}
+                    disabled={deleteMutation.isPending}
+                    data-testid={`button-delete-custom-${voice.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function SettingsTab() {
   const { toast } = useToast();
@@ -590,6 +884,8 @@ export function SettingsTab() {
           )}
         </CardContent>
       </Card>
+
+      <CustomVoicesCard />
 
       <Card>
         <CardHeader>
