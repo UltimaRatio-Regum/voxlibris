@@ -12,7 +12,7 @@ import { SpeakerAssignment } from "@/components/SpeakerAssignment";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { SettingsPanel } from "@/components/SettingsPanel";
-import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse, LibraryVoice, TTSEngine, EdgeVoice, OpenAIVoice } from "@shared/schema";
+import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse, LibraryVoice, TTSEngine, EdgeVoice } from "@shared/schema";
 
 export function AdvancedTab() {
   const { toast } = useToast();
@@ -57,11 +57,6 @@ export function AdvancedTab() {
   });
   const edgeVoices = edgeVoicesData?.voices ?? [];
 
-  const { data: openaiVoicesData } = useQuery<{ voices: OpenAIVoice[], presets: Record<string, string> }>({
-    queryKey: ["/api/openai-voices"],
-    enabled: ttsEngine === "openai",
-  });
-  const openaiVoices = openaiVoicesData?.voices ?? [];
 
   const [selectedLibraryVoiceId, setSelectedLibraryVoiceId] = useState<string | null>(null);
 
@@ -453,7 +448,6 @@ export function AdvancedTab() {
           <VoiceLibrary
             voices={libraryVoices}
             edgeVoices={edgeVoices}
-            openaiVoices={openaiVoices}
             selectedId={selectedLibraryVoiceId}
             onSelect={setSelectedLibraryVoiceId}
             isLoading={isLibraryLoading}
@@ -474,7 +468,6 @@ export function AdvancedTab() {
               voiceSamples={voiceSamples}
               libraryVoices={libraryVoices}
               edgeVoices={edgeVoices}
-              openaiVoices={openaiVoices}
               ttsEngine={ttsEngine}
               speakerConfigs={speakerConfigs}
               narratorVoiceId={narratorVoiceId}

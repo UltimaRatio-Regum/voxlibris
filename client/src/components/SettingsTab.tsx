@@ -67,13 +67,6 @@ interface VoiceLibraryItem {
   hasAltAudio: boolean;
 }
 
-const CHATTERBOX_MODELS = [
-  { value: "qwen3", label: "Qwen3 TTS (Best quality)" },
-  { value: "chatterbox", label: "Chatterbox (Fast)" },
-  { value: "xtts_v2", label: "XTTS v2 (Multilingual)" },
-  { value: "styletts2", label: "StyleTTS2 (Expressive)" },
-];
-
 const DEFAULT_PROSODY: ProsodySettings = {
   pitch: {
     neutral: 0, happy: 0.12, sad: -0.12, angry: 0.12,
@@ -118,21 +111,6 @@ export function SettingsTab() {
   const [maxSilenceMs, setMaxSilenceMs] = useState(() =>
     parseInt(localStorage.getItem("voxlibris-max-silence-ms") || "300", 10)
   );
-  const [chatterboxModel, setChatterboxModel] = useState(() =>
-    localStorage.getItem("voxlibris-chatterbox-model") || "qwen3"
-  );
-  const [stAlpha, setStAlpha] = useState(() =>
-    parseFloat(localStorage.getItem("voxlibris-styletts-alpha") || "0.3")
-  );
-  const [stBeta, setStBeta] = useState(() =>
-    parseFloat(localStorage.getItem("voxlibris-styletts-beta") || "0.7")
-  );
-  const [stDiffusionSteps, setStDiffusionSteps] = useState(() =>
-    parseInt(localStorage.getItem("voxlibris-styletts-diffusion-steps") || "5", 10)
-  );
-  const [stEmbeddingScale, setStEmbeddingScale] = useState(() =>
-    parseFloat(localStorage.getItem("voxlibris-styletts-embedding-scale") || "1.0")
-  );
   const [localProsody, setLocalProsody] = useState<ProsodySettings | null>(null);
 
   const [engineUrl, setEngineUrl] = useState("");
@@ -140,37 +118,6 @@ export function SettingsTab() {
   const [testingEngineId, setTestingEngineId] = useState<string | null>(null);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
 
-  interface TTSSettings {
-    chatterbox_model: string;
-    st_alpha: number;
-    st_beta: number;
-    st_diffusion_steps: number;
-    st_embedding_scale: number;
-  }
-
-  const { data: ttsSettingsData } = useQuery<TTSSettings>({
-    queryKey: ["/api/tts-settings"],
-  });
-
-  useEffect(() => {
-    if (ttsSettingsData) {
-      setChatterboxModel(ttsSettingsData.chatterbox_model);
-      setStAlpha(ttsSettingsData.st_alpha);
-      setStBeta(ttsSettingsData.st_beta);
-      setStDiffusionSteps(ttsSettingsData.st_diffusion_steps);
-      setStEmbeddingScale(ttsSettingsData.st_embedding_scale);
-    }
-  }, [ttsSettingsData]);
-
-  const saveTTSSettingsMutation = useMutation({
-    mutationFn: async (settings: TTSSettings) => {
-      const response = await apiRequest("POST", "/api/tts-settings", settings);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tts-settings"] });
-    },
-  });
 
   const { data: prosodyData } = useQuery<ProsodySettings>({
     queryKey: ["/api/prosody-settings"],
@@ -179,11 +126,6 @@ export function SettingsTab() {
   const { data: edgeVoicesData } = useQuery<{ voices: EdgeVoice[] }>({
     queryKey: ["/api/edge-voices"],
     enabled: defaultEngine === "edge-tts",
-  });
-
-  const { data: openaiVoicesData } = useQuery<{ voices: OpenAIVoice[] }>({
-    queryKey: ["/api/openai-voices"],
-    enabled: defaultEngine === "openai",
   });
 
   const showVoiceCloningOptions = isVoiceCloningEngine(defaultEngine as TTSEngine);
@@ -334,59 +276,6 @@ export function SettingsTab() {
     }
   };
 
-  const saveTTSSettings = (updates: Partial<TTSSettings>) => {
-    const settings: TTSSettings = {
-      chatterbox_model: updates.chatterbox_model ?? chatterboxModel,
-      st_alpha: updates.st_alpha ?? stAlpha,
-      st_beta: updates.st_beta ?? stBeta,
-      st_diffusion_steps: updates.st_diffusion_steps ?? stDiffusionSteps,
-      st_embedding_scale: updates.st_embedding_scale ?? stEmbeddingScale,
-    };
-    saveTTSSettingsMutation.mutate(settings);
-  };
-
-  const handleChatterboxModelChange = (value: string) => {
-    setChatterboxModel(value);
-    localStorage.setItem("voxlibris-chatterbox-model", value);
-    saveTTSSettings({ chatterbox_model: value });
-  };
-
-  const handleStAlphaChange = (value: string) => {
-    const num = parseFloat(value);
-    if (!isNaN(num) && num >= 0 && num <= 1) {
-      setStAlpha(num);
-      localStorage.setItem("voxlibris-styletts-alpha", String(num));
-      saveTTSSettings({ st_alpha: num });
-    }
-  };
-
-  const handleStBetaChange = (value: string) => {
-    const num = parseFloat(value);
-    if (!isNaN(num) && num >= 0 && num <= 1) {
-      setStBeta(num);
-      localStorage.setItem("voxlibris-styletts-beta", String(num));
-      saveTTSSettings({ st_beta: num });
-    }
-  };
-
-  const handleStDiffusionStepsChange = (value: string) => {
-    const num = parseInt(value, 10);
-    if (!isNaN(num) && num >= 1 && num <= 20) {
-      setStDiffusionSteps(num);
-      localStorage.setItem("voxlibris-styletts-diffusion-steps", String(num));
-      saveTTSSettings({ st_diffusion_steps: num });
-    }
-  };
-
-  const handleStEmbeddingScaleChange = (value: string) => {
-    const num = parseFloat(value);
-    if (!isNaN(num) && num >= 0.5 && num <= 2) {
-      setStEmbeddingScale(num);
-      localStorage.setItem("voxlibris-styletts-embedding-scale", String(num));
-      saveTTSSettings({ st_embedding_scale: num });
-    }
-  };
-
   const handleProsodyChange = (emotion: string, field: "pitch" | "speed" | "volume" | "intensity", value: string) => {
     if (!localProsody) return;
     const numValue = parseFloat(value);
@@ -454,12 +343,6 @@ export function SettingsTab() {
       return edgeVoicesData.voices.map((v) => ({
         value: `edge:${v.id}`,
         label: `${v.name} (${v.gender})`,
-      }));
-    }
-    if (defaultEngine === "openai" && openaiVoicesData?.voices) {
-      return openaiVoicesData.voices.map((v) => ({
-        value: `openai:${v.id}`,
-        label: `${v.name} - ${v.description}`,
       }));
     }
     if (showVoiceCloningOptions && libraryVoicesData) {
@@ -799,109 +682,6 @@ export function SettingsTab() {
             <p className="text-sm text-muted-foreground text-center py-4">
               No voice samples in the database. Upload a .wav file or run the migration script to import from the voice_samples folder.
             </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>HuggingFace TTS Paid Settings</CardTitle>
-          <CardDescription>
-            Configure the TTS model and parameters for HuggingFace TTS Paid
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="chatterbox-model">TTS Model</Label>
-              <Select value={chatterboxModel} onValueChange={handleChatterboxModelChange}>
-                <SelectTrigger id="chatterbox-model" data-testid="select-chatterbox-model">
-                  <SelectValue placeholder="Select model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CHATTERBOX_MODELS.map((model) => (
-                    <SelectItem key={model.value} value={model.value}>
-                      {model.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Qwen3 has best quality, StyleTTS2 is most expressive
-              </p>
-            </div>
-          </div>
-
-          {chatterboxModel === "styletts2" && (
-            <div className="grid gap-4 md:grid-cols-2 pt-4 border-t">
-              <div className="space-y-2">
-                <Label htmlFor="st-alpha">Style Alpha (0-1)</Label>
-                <Input
-                  id="st-alpha"
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={stAlpha}
-                  onChange={(e) => handleStAlphaChange(e.target.value)}
-                  data-testid="input-st-alpha"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Voice style strength (higher = more stylized)
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="st-beta">Style Beta (0-1)</Label>
-                <Input
-                  id="st-beta"
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={stBeta}
-                  onChange={(e) => handleStBetaChange(e.target.value)}
-                  data-testid="input-st-beta"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Prosody emphasis (higher = stronger emotion)
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="st-diffusion-steps">Diffusion Steps (1-20)</Label>
-                <Input
-                  id="st-diffusion-steps"
-                  type="number"
-                  min={1}
-                  max={20}
-                  step={1}
-                  value={stDiffusionSteps}
-                  onChange={(e) => handleStDiffusionStepsChange(e.target.value)}
-                  data-testid="input-st-diffusion-steps"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Quality vs speed (higher = better quality, slower)
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="st-embedding-scale">Embedding Scale (0.5-2)</Label>
-                <Input
-                  id="st-embedding-scale"
-                  type="number"
-                  min={0.5}
-                  max={2}
-                  step={0.1}
-                  value={stEmbeddingScale}
-                  onChange={(e) => handleStEmbeddingScaleChange(e.target.value)}
-                  data-testid="input-st-embedding-scale"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Speaker identity strength (higher = closer to reference)
-                </p>
-              </div>
-            </div>
           )}
         </CardContent>
       </Card>

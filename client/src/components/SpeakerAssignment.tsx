@@ -13,14 +13,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { isVoiceCloningEngine } from "@/lib/tts-engines";
-import type { VoiceSample, SpeakerConfig, LibraryVoice, EdgeVoice, OpenAIVoice, TTSEngine } from "@shared/schema";
+import type { VoiceSample, SpeakerConfig, LibraryVoice, EdgeVoice, TTSEngine } from "@shared/schema";
 
 interface SpeakerAssignmentProps {
   speakers: string[];
   voiceSamples: VoiceSample[];
   libraryVoices: LibraryVoice[];
   edgeVoices: EdgeVoice[];
-  openaiVoices: OpenAIVoice[];
   ttsEngine: TTSEngine;
   speakerConfigs: Record<string, SpeakerConfig>;
   narratorVoiceId: string | null;
@@ -33,7 +32,6 @@ export function SpeakerAssignment({
   voiceSamples,
   libraryVoices,
   edgeVoices,
-  openaiVoices,
   ttsEngine,
   speakerConfigs,
   narratorVoiceId,
@@ -42,7 +40,6 @@ export function SpeakerAssignment({
 }: SpeakerAssignmentProps) {
   const renderVoiceOptions = () => {
     const showEdgeVoices = ttsEngine === "edge-tts" && edgeVoices.length > 0;
-    const showOpenaiVoices = ttsEngine === "openai" && openaiVoices.length > 0;
     const showLibraryVoices = isVoiceCloningEngine(ttsEngine) && libraryVoices.length > 0;
     
     return (
@@ -63,24 +60,6 @@ export function SpeakerAssignment({
                     {voice.name.replace("Microsoft ", "").replace(" Online (Natural)", "")}
                   </span>
                   <span className="text-xs text-muted-foreground">{voice.locale}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        )}
-        
-        {showOpenaiVoices && (
-          <SelectGroup>
-            <SelectLabel className="flex items-center gap-2">
-              <Mic className="h-3 w-3" />
-              OpenAI Voices
-            </SelectLabel>
-            {openaiVoices.map((voice) => (
-              <SelectItem key={voice.id} value={`openai:${voice.id}`}>
-                <div className="flex items-center gap-2">
-                  <Mic className="h-3 w-3" />
-                  <span>{voice.name}</span>
-                  <span className="text-xs text-muted-foreground">{voice.description}</span>
                 </div>
               </SelectItem>
             ))}

@@ -18,18 +18,14 @@ VoxLibris is a web application designed to transform plain text into expressive 
 - **UI Components**: Shadcn/ui
 - **UI/UX Decisions**: Four-tab layout (Beginner, Advanced, Jobs, Settings), file upload workflow, wizard-style generation flow (Upload → Analyzing → Voice Selection → Generate), real-time progress updates, dark mode support.
 - **Settings Tab**: Default TTS engine/voice selection (persisted to localStorage), emotion prosody configuration table with pitch/speed/volume weights (persisted to prosody_settings.json).
-- **TTS Engine Configuration**: Centralized in `client/src/lib/tts-engines.ts` with `TTS_ENGINES` array defining all engines with properties (id, label, name, description, badge, supportsVoiceCloning, requiresApiKey, isLocal). Helper functions: `isVoiceCloningEngine()`, `getTTSEngine()`, `getVoiceCloningEngines()`, `getLocalEngines()`.
+- **TTS Engine Configuration**: Centralized in `client/src/lib/tts-engines.ts` with `TTS_ENGINES` array defining built-in engines (Edge TTS, Soprano). Additional engines are registered dynamically via the REST DI system (Settings tab). Helper functions: `isVoiceCloningEngine()`, `getTTSEngine()`, `getVoiceCloningEngines()`, `getLocalEngines()`.
 
 ### Backend (Python + FastAPI)
 - **Framework**: FastAPI with uvicorn
-- **TTS Engines**:
+- **Built-in TTS Engines**:
     - **edge-tts**: High-quality neural TTS (Microsoft Azure), 300+ voices.
     - **Soprano TTS**: Ultra-fast local generation (80M model, 2000x real-time on GPU).
-    - **Chatterbox Free**: Voice cloning (via HuggingFace Spaces API), supports emotion-based exaggeration.
-    - **HuggingFace TTS Paid**: Multi-model voice cloning (Qwen3, Chatterbox, XTTS v2, StyleTTS2) with Bearer token auth.
-    - **StyleTTS2**: Standalone expressive TTS via CherithCutestory/styletts2 HF Space, supports emotion control (neutral, happy, sad, angry, fear, excited), native speed/pitch adjustment (no pyrubberband needed).
-    - **OpenAI TTS**: Utilizes 6 premium voices.
-    - **Piper TTS**: Local TTS engine.
+- **Remote TTS Engines**: Registered via REST DI system (URL + optional API key). `RemoteTTSClient` in `backend/remote_tts_client.py` auto-normalizes HuggingFace Spaces page URLs to API endpoints. Legacy backend engine classes (Chatterbox, HF TTS Paid, StyleTTS2, OpenAI, Piper) remain in `backend/tts_engines.py` but are not exposed in the frontend engine list.
 - **TTS Architecture**: Base class pattern in `backend/tts_engines.py` with unified TTSParams (text, voice_wav, voice_text, voice_id, speed, pitch, emotion, exaggeration). Engine subclasses implement engine-specific logic. EngineFactory creates instances by name.
 - **Audio Processing**: pyrubberband for pitch/speed manipulation, pydub for format conversion, soundfile, numpy, scipy for audio I/O. Aggressive silence trimming for TTS audio (two-pass removal and edge trimming).
 - **Sentiment Analysis**: TextBlob, integrated into LLM output for emotion-based prosody adjustments.

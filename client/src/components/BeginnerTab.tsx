@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { TTS_ENGINES, isVoiceCloningEngine } from "@/lib/tts-engines";
-import type { TTSEngine, EdgeVoice, LibraryVoice, OpenAIVoice } from "@shared/schema";
+import type { TTSEngine, EdgeVoice, LibraryVoice } from "@shared/schema";
 
 interface Upload {
   id: string;
@@ -61,11 +61,6 @@ export function BeginnerTab() {
   const { data: edgeVoicesData } = useQuery<{ voices: EdgeVoice[] }>({
     queryKey: ["/api/edge-voices"],
     enabled: ttsEngine === "edge-tts",
-  });
-
-  const { data: openaiVoicesData } = useQuery<{ voices: OpenAIVoice[] }>({
-    queryKey: ["/api/openai-voices"],
-    enabled: ttsEngine === "openai",
   });
 
   const { data: libraryVoices = [] } = useQuery<LibraryVoice[]>({
@@ -163,12 +158,6 @@ export function BeginnerTab() {
       return edgeVoicesData.voices.map(v => ({
         value: `edge:${v.id}`,
         label: `${v.name} (${v.gender})`,
-      }));
-    }
-    if (ttsEngine === "openai" && openaiVoicesData?.voices) {
-      return openaiVoicesData.voices.map(v => ({
-        value: `openai:${v.id}`,
-        label: `${v.name} - ${v.description}`,
       }));
     }
     if (isVoiceCloningEngine(ttsEngine) && libraryVoices) {

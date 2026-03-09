@@ -1,4 +1,4 @@
-import { Settings, Sliders, Volume2, Cpu, AlertTriangle } from "lucide-react";
+import { Settings, Sliders, Cpu } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -10,9 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useQuery } from "@tanstack/react-query";
-import { TTS_ENGINES, getTTSEngine } from "@/lib/tts-engines";
+import { TTS_ENGINES } from "@/lib/tts-engines";
 import type { TTSEngine } from "@shared/schema";
 
 interface SettingsPanelProps {
@@ -34,15 +32,6 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const selectedEngine = TTS_ENGINES.find(e => e.id === ttsEngine);
 
-  const { data: chatterboxStatus } = useQuery<{
-    free: { available: boolean; max_chars: number };
-    paid: { configured: boolean; api_url_set: boolean; api_key_set: boolean };
-  }>({
-    queryKey: ["/api/chatterbox-status"],
-    enabled: ttsEngine === "hf-tts-paid",
-  });
-
-  const showPaidWarning = ttsEngine === "hf-tts-paid" && chatterboxStatus && !chatterboxStatus.paid.configured;
 
   return (
     <Card>
@@ -89,14 +78,6 @@ export function SettingsPanel({
             <p className="text-xs text-muted-foreground">
               {selectedEngine.description}
             </p>
-          )}
-          {showPaidWarning && (
-            <Alert variant="destructive" className="mt-2">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription className="text-xs">
-                Chatterbox Paid API not configured. Set CHATTERBOX_API_URL and CHATTERBOX_API_KEY environment variables. Will fall back to free tier.
-              </AlertDescription>
-            </Alert>
           )}
         </div>
 

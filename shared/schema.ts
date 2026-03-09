@@ -1,15 +1,7 @@
 import { z } from "zod";
 
 // TTS Engine types
-export const ttsEngineSchema = z.enum([
-  "edge-tts",          // Microsoft Azure Neural TTS - free, 300+ voices
-  "openai",            // OpenAI TTS - requires API key
-  "chatterbox-free",   // Chatterbox TTS - free HuggingFace Spaces API
-  "hf-tts-paid",       // HuggingFace TTS Paid - multi-model voice cloning with Bearer token
-  "styletts2",         // StyleTTS2 - expressive TTS via HuggingFace Space
-  "piper",             // Piper TTS - open source, fast, local
-  "soprano",           // Soprano TTS - ultra-fast local 80M model
-]);
+export const ttsEngineSchema = z.string();
 
 export type TTSEngine = z.infer<typeof ttsEngineSchema>;
 

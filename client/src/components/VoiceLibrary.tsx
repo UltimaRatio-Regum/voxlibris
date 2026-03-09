@@ -18,12 +18,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { isVoiceCloningEngine } from "@/lib/tts-engines";
-import type { LibraryVoice, EdgeVoice, OpenAIVoice, TTSEngine } from "@shared/schema";
+import type { LibraryVoice, EdgeVoice, TTSEngine } from "@shared/schema";
 
 interface VoiceLibraryProps {
   voices: LibraryVoice[];
   edgeVoices?: EdgeVoice[];
-  openaiVoices?: OpenAIVoice[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   isLoading?: boolean;
@@ -33,7 +32,6 @@ interface VoiceLibraryProps {
 export function VoiceLibrary({
   voices,
   edgeVoices = [],
-  openaiVoices = [],
   selectedId,
   onSelect,
   isLoading = false,
@@ -71,7 +69,6 @@ export function VoiceLibrary({
 
   const showClonableVoices = isVoiceCloningEngine(ttsEngine);
   const showEdgeVoices = ttsEngine === "edge-tts";
-  const showOpenaiVoices = ttsEngine === "openai";
 
   const filteredLibraryVoices = voices.filter((voice) => {
     const matchesSearch =
@@ -101,17 +98,8 @@ export function VoiceLibrary({
     return matchesSearch && matchesGender;
   });
 
-  const filteredOpenaiVoices = openaiVoices.filter((voice) => {
-    const matchesSearch =
-      searchQuery === "" ||
-      voice.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      voice.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
-
   const getTotalCount = () => {
     if (showEdgeVoices) return edgeVoices.length;
-    if (showOpenaiVoices) return openaiVoices.length;
     if (showClonableVoices) return voices.length;
     return 0;
   };
@@ -128,16 +116,6 @@ export function VoiceLibrary({
     switch (ttsEngine) {
       case "edge-tts":
         return "Microsoft Azure neural voices";
-      case "chatterbox-free":
-        return "Voice cloning (HuggingFace free tier)";
-      case "hf-tts-paid":
-        return "Voice cloning (HuggingFace TTS Paid)";
-      case "styletts2":
-        return "Voice cloning (StyleTTS2 Expressive)";
-      case "openai":
-        return "OpenAI TTS voices";
-      case "piper":
-        return "Piper TTS voices";
       case "soprano":
         return "Soprano TTS voices";
       default:
@@ -201,47 +179,6 @@ export function VoiceLibrary({
               <div className="text-center py-8 text-muted-foreground">
                 <div className="animate-pulse">Loading voice library...</div>
               </div>
-            ) : showOpenaiVoices ? (
-              filteredOpenaiVoices.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Library className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm">No voices match your search</p>
-                </div>
-              ) : (
-                <ScrollArea className="h-[280px]">
-                  <div className="space-y-2">
-                    {filteredOpenaiVoices.map((voice) => (
-                      <div
-                        key={voice.id}
-                        className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors hover-elevate ${
-                          selectedId === voice.id
-                            ? "border-primary bg-primary/5"
-                            : "border-transparent bg-muted/50"
-                        }`}
-                        onClick={() => onSelect(voice.id)}
-                        data-testid={`openai-voice-${voice.id}`}
-                      >
-                        <div className="h-9 w-9 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
-                          <User className="h-4 w-4 text-emerald-500" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium truncate text-sm" data-testid={`text-openai-voice-name-${voice.id}`}>
-                              {voice.name}
-                            </p>
-                            <Badge variant="outline" className="text-xs py-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-                              OpenAI
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {voice.description}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )
             ) : showEdgeVoices ? (
               filteredEdgeVoices.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -349,7 +286,7 @@ export function VoiceLibrary({
               <div className="text-center py-8 text-muted-foreground">
                 <Library className="h-10 w-10 mx-auto mb-3 opacity-50" />
                 <p className="text-sm">Voice library not available for {ttsEngine}</p>
-                <p className="text-xs mt-1">Select Edge TTS, OpenAI, or Chatterbox for voice options</p>
+                <p className="text-xs mt-1">Select Edge TTS or a voice cloning engine for voice options</p>
               </div>
             )}
           </CardContent>
