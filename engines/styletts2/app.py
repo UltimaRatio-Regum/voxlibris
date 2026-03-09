@@ -42,8 +42,18 @@ EMOTION_PRESETS = {
 tts_engine = None
 
 
+def ensure_nltk_data():
+    import nltk
+    for pkg in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger_eng']:
+        try:
+            nltk.data.find(f'tokenizers/{pkg}' if 'punkt' in pkg else f'taggers/{pkg}')
+        except LookupError:
+            nltk.download(pkg)
+
+
 def load_model():
     global tts_engine
+    ensure_nltk_data()
 
     _original_load = torch.load
     def _patched_load(*args, **kwargs):

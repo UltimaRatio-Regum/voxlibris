@@ -1,0 +1,103 @@
+
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[nltk_data] Downloading package punkt to /home/user/nltk_data...
+[nltk_data]   Unzipping tokenizers/punkt.zip.
+/usr/local/lib/python3.10/site-packages/google/api_core/_python_version_support.py:275: FutureWarning: You are using a Python version (3.10.20) which Google will stop supporting in new releases of google.api_core once it reaches its end of life (2026-10-04). Please upgrade to the latest Python version, or at least Python 3.11, to continue receiving updates for google.api_core past that date.
+  warnings.warn(message, FutureWarning)
+INFO:matplotlib.font_manager:generated new fontManager
+Invalid or missing model checkpoint path. Loading default model...
+INFO:styletts2-engine:Loading StyleTTS2 model on cpu...
+INFO:cached_path:https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/epochs_2nd_00020.pth not found in cache, downloading to /home/user/.cache/cached_path/ee3a1075dc21045f7d3c0f59dd9bac785d4f0ecd4577541442a7df03b111bae5.bff5165213f7fcbaca6a68ae8cb66b64e953acfc2349f3f6b6cb8f56b48174ea
+Downloading …/LibriTTS/epochs_2nd_00020.pth ━━━━━━━━━━━ 100% 0:00:13 771.4/771.4
+                                                                     MB         
+Invalid or missing config path. Loading default config...
+INFO:cached_path:https://huggingface.co/yl4579/StyleTTS2-LibriTTS/resolve/main/Models/LibriTTS/config.yml?download=true not found in cache, downloading to /home/user/.cache/cached_path/b85c8a5cfaca9033c395ca619db6d918d06f4b0234ef5cff6e2e78d450176a5c.d4195e9fc261c4063d73cb96643ffea782a9d2c4e0cd930bbe47bcca88493087
+Downloading …riTTS/config.yml?download=true ━━━━━━━━━━━━ 100% 0:00:00 1.9/1.9 kB
+Invalid ASR config path. Loading default config...
+INFO:cached_path:https://github.com/yl4579/StyleTTS2/raw/main/Utils/ASR/config.yml not found in cache, downloading to /home/user/.cache/cached_path/8e321395b137fbbf44eca1c0606719f4f289b96709c2266cd92294a81b50c719.29c6d0c3b986a0dbb6bf7b3cd8a04109aedc7b752b437bafffaaa008db50e146
+Downloading …/raw/main/Utils/ASR/config.yml ━━━━━━━━━━ 100% 0:00:00 481/481     
+                                                                    bytes       
+Invalid ASR model checkpoint path. Loading default model...
+INFO:cached_path:https://github.com/yl4579/StyleTTS2/raw/main/Utils/ASR/epoch_00080.pth not found in cache, downloading to /home/user/.cache/cached_path/70deb8eeb3fbb7e6a13a06af4b930cef1489e9c9f836d5845ad8a93ba773dc34.b33f593158b7cb7e559ee098cc16a03c840aeb22dbfd117166cdce080a13f61b
+Downloading …main/Utils/ASR/epoch_00080.pth ━━━━━━━━━━━ 100% 0:00:01 94.6/94.6  
+                                                                     MB         
+Invalid F0 model path. Loading default model...
+INFO:cached_path:https://github.com/yl4579/StyleTTS2/raw/main/Utils/JDC/bst.t7 not found in cache, downloading to /home/user/.cache/cached_path/a3b7392f80b2b03ea383e66acc43d77bfe178608ad06adb0e481a7e1917ff1d7.67fb6bd33a7c4582d210837b95bf22633375f02adbdbd73a8f3957fcbaffc04c
+Downloading …TTS2/raw/main/Utils/JDC/bst.t7 ━━━━━━━━━━━ 100% 0:00:00 21.0/21.0  
+                                                                     MB         
+INFO:cached_path:https://github.com/yl4579/StyleTTS2/raw/main/Utils/PLBERT/config.yml not found in cache, downloading to /home/user/.cache/cached_path/8a88800f2fe57fb37787f337a1c6537028b73d11a2ebdd265ace71faecc7efb2.91461c57e330762beda5b9f2b15e137b15e5dfd4f625e9ca7c4839b4570a2cb9
+Downloading …w/main/Utils/PLBERT/config.yml ━━━━━━━━━━ 100% 0:00:00 915/915     
+                                                                    bytes       
+INFO:cached_path:https://github.com/yl4579/StyleTTS2/raw/main/Utils/PLBERT/step_1000000.t7 not found in cache, downloading to /home/user/.cache/cached_path/e8ece5df234da9f5e425ce86475c7047e132cd3a713b6b21a6565878e540faa2.a58fedc17ba1d7b86bbdceaa60881e7177619536658eeb4a79ccbf025b0cd097
+Downloading …n/Utils/PLBERT/step_1000000.t7 ━━━━━━━━━━━ 100% 0:00:00 25.2/25.2  
+                                                                     MB         
+/usr/local/lib/python3.10/site-packages/torch/nn/utils/weight_norm.py:143: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+/usr/local/lib/python3.10/site-packages/torch/nn/modules/rnn.py:123: UserWarning: dropout option adds dropout after all but last recurrent layer, so non-zero dropout expects num_layers greater than 1, but got dropout=0.2 and num_layers=1
+  warnings.warn(
+bert loaded
+bert_encoder loaded
+predictor loaded
+decoder loaded
+text_encoder loaded
+predictor_encoder loaded
+style_encoder loaded
+diffusion loaded
+text_aligner loaded
+pitch_extractor loaded
+mpd loaded
+msd loaded
+wd loaded
+INFO:styletts2-engine:StyleTTS2 model loaded successfully.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
+INFO:     10.16.25.98:25183 - "GET /?logs=build HTTP/1.1" 200 OK
+INFO:     10.16.25.98:25183 - "GET /health HTTP/1.1" 200 OK
+Cloning default target voice...
+INFO:cached_path:https://styletts2.github.io/wavs/LJSpeech/OOD/GT/00001.wav not found in cache, downloading to /home/user/.cache/cached_path/8dd09fb66d81b5ba4c7e9dde9c268cc28a2f393a149f94c52d2c9dc6f02b469e.66ef4d45f7475dbeb52ecb7a2414b93d08a27f5dd6ea220dcf50eac803f69806
+Downloading …wavs/LJSpeech/OOD/GT/00001.wav ━━━━━━━━━━━ 100% 0:00:00 349.5/349.5
+                                                                     kB         
+ERROR:styletts2-engine:TTS generation failed
+Traceback (most recent call last):
+  File "/app/app.py", line 225, in convert_text_to_speech
+    wav = tts_engine.inference(
+  File "/usr/local/lib/python3.10/site-packages/styletts2/tts.py", line 232, in inference
+    ps = word_tokenize(phonemized_text)
+  File "/usr/local/lib/python3.10/site-packages/nltk/tokenize/__init__.py", line 142, in word_tokenize
+    sentences = [text] if preserve_line else sent_tokenize(text, language)
+  File "/usr/local/lib/python3.10/site-packages/nltk/tokenize/__init__.py", line 119, in sent_tokenize
+    tokenizer = _get_punkt_tokenizer(language)
+  File "/usr/local/lib/python3.10/site-packages/nltk/tokenize/__init__.py", line 105, in _get_punkt_tokenizer
+    return PunktTokenizer(language)
+  File "/usr/local/lib/python3.10/site-packages/nltk/tokenize/punkt.py", line 1744, in __init__
+    self.load_lang(lang)
+  File "/usr/local/lib/python3.10/site-packages/nltk/tokenize/punkt.py", line 1749, in load_lang
+    lang_dir = find(f"tokenizers/punkt_tab/{lang}/")
+  File "/usr/local/lib/python3.10/site-packages/nltk/data.py", line 696, in find
+    raise LookupError(resource_not_found)
+LookupError: 
+**********************************************************************
+  Resource 'punkt_tab' not found.
+  Please use the NLTK Downloader to obtain the resource:
+
+  >>> import nltk
+  >>> nltk.download('punkt_tab')
+
+  For more information see: https://www.nltk.org/data.html
+
+  Attempted to load 'tokenizers/punkt_tab/english/'
+
+  Searched in:
+    - '/home/user/nltk_data'
+    - '/usr/local/nltk_data'
+    - '/usr/local/share/nltk_data'
+    - '/usr/local/lib/nltk_data'
+    - '/usr/share/nltk_data'
+    - '/usr/local/share/nltk_data'
+    - '/usr/lib/nltk_data'
+    - '/usr/local/lib/nltk_data'
+**********************************************************************
+
+INFO:     10.16.31.44:27503 - "POST /ConvertTextToSpeech HTTP/1.1" 500 Internal Server Error
+ 
