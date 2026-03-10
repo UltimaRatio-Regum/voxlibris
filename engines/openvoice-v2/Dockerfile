@@ -21,7 +21,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir --no-deps "myshell-openvoice @ git+https://github.com/myshell-ai/OpenVoice.git"
 RUN pip install --no-cache-dir --no-deps "MeloTTS @ git+https://github.com/myshell-ai/MeloTTS.git"
-RUN pip install --no-cache-dir librosa cn2an pypinyin jieba eng_to_ipa inflect unidic unidic-lite gruut unidecode
+RUN pip install --no-cache-dir transformers librosa cn2an pypinyin jieba eng_to_ipa inflect unidic unidic-lite gruut unidecode
 RUN python -m unidic download || true
 
 RUN wget -q https://myshell-public-repo-host.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip -O /tmp/ckpt.zip && \
