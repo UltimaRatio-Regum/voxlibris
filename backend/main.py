@@ -724,19 +724,25 @@ async def parse_text_llm_stream(request: ParseTextLLMRequest):
         
         return chunks
     
-    def fallback_parse_chunk(chunk: str) -> dict:
+    def fallback_parse_chunk(chunk: str, known_speakers: list[str] | None = None) -> dict:
         """Use basic text parser as fallback when LLM fails."""
-        segments_list, speakers_list = text_parser.parse(chunk)
+        segments_list, speakers_list = text_parser.parse(chunk, known_speakers=known_speakers)
         segments = []
         for seg in segments_list:
             segments.append({
                 "type": seg.type,
                 "text": seg.text,
                 "speaker": seg.speaker,
+                "emotion": seg.sentiment.label if seg.sentiment else "neutral",
                 "sentiment": seg.sentiment.label if seg.sentiment else "neutral",
             })
         return {"segments": segments, "detectedSpeakers": speakers_list, "fallback": True}
     
+    CANONICAL_EMOTIONS = [
+        "neutral", "happy", "sad", "angry", "fear", "disgust", "surprise",
+        "excited", "calm", "anxious", "hopeful", "melancholy", "tender", "proud",
+    ]
+
     def validate_llm_response(data: dict) -> bool:
         """Validate LLM response has required structure."""
         if not isinstance(data, dict):
@@ -753,34 +759,40 @@ async def parse_text_llm_stream(request: ParseTextLLMRequest):
         return True
     
     async def call_llm_for_chunk(client: httpx.AsyncClient, chunk: str, known_speakers: list[str], context: str) -> dict:
-        """Call LLM to parse a chunk of text."""
+        """Call LLM to segment and chunk text in one pass."""
         speaker_hint = ""
         if known_speakers:
-            speaker_hint = f"Known speakers so far: {', '.join(known_speakers)}. "
+            speaker_hint = f"\nKnown speakers from previous sections: {', '.join(known_speakers)}. Use these names when you recognize the same characters.\n"
         
-        valid_sentiments = ["neutral", "happy", "sad", "angry", "fearful", "excited", "calm", "surprised", "anxious", "hopeful", "melancholy", "disgusted"]
-        
-        prompt = f"""Analyze this text excerpt and identify dialogue vs narration. For each dialogue segment, identify the speaker.
+        prompt = f"""Segment and chunk this text for text-to-speech. Each chunk should be 8-12 seconds of speech (~20-30 words).
 
-{speaker_hint}Previous context: {context[:500] if context else 'Start of text'}
+RULES:
+1. Always split at quote boundaries — quoted dialogue and surrounding narration must be separate chunks.
+2. Each chunk must be either "narration" or "dialogue", never mixed.
+3. Keep chunks at ~20-30 words (8-12 seconds). Split long sentences at natural pauses (commas, semicolons, conjunctions) if needed.
+4. For dialogue chunks, identify the speaker by name from context.
+5. Assign one emotion to each chunk from this list: {CANONICAL_EMOTIONS}
+6. Preserve the original text exactly — do not paraphrase or summarize.
+{speaker_hint}
+Previous context: {context[:500] if context else 'Start of text'}
 
 TEXT TO ANALYZE:
 {chunk}
 
-Return a JSON object with this structure:
+Return ONLY a JSON object with this structure:
 {{
   "segments": [
     {{
       "type": "narration" or "dialogue",
-      "text": "the actual text",
+      "text": "exact text from the passage",
       "speaker": "speaker name or null for narration",
-      "sentiment": one of {valid_sentiments}
+      "emotion": "one emotion from the list above"
     }}
   ],
   "detectedSpeakers": ["list", "of", "speaker", "names"]
 }}
 
-Be precise about separating quoted dialogue from narration. Return ONLY valid JSON."""
+Return ONLY valid JSON."""
 
         try:
             response = await client.post(
@@ -816,19 +828,19 @@ Be precise about separating quoted dialogue from narration. Return ONLY valid JS
             
             if not validate_llm_response(result):
                 logger.warning(f"LLM response failed validation, using fallback parser")
-                return fallback_parse_chunk(chunk)
+                return fallback_parse_chunk(chunk, known_speakers=known_speakers)
             
             if not result.get("segments"):
                 logger.warning(f"LLM returned empty segments, using fallback parser")
-                return fallback_parse_chunk(chunk)
+                return fallback_parse_chunk(chunk, known_speakers=known_speakers)
             
             return result
         except json.JSONDecodeError as e:
             logger.error(f"LLM returned invalid JSON: {e}")
-            return fallback_parse_chunk(chunk)
+            return fallback_parse_chunk(chunk, known_speakers=known_speakers)
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
-            return fallback_parse_chunk(chunk)
+            return fallback_parse_chunk(chunk, known_speakers=known_speakers)
     
     async def generate_stream():
         chunks = split_into_chunks(request.text)
@@ -853,16 +865,23 @@ Be precise about separating quoted dialogue from narration. Return ONLY valid JS
                     
                     chunk_segments = []
                     for seg in result.get("segments", []):
+                        seg_text = seg.get("text", "")
+                        wc = len(seg_text.split())
+                        emotion = seg.get("emotion", seg.get("sentiment", "neutral"))
+                        if emotion not in CANONICAL_EMOTIONS:
+                            emotion = "neutral"
                         segment = {
                             "id": str(uuid.uuid4()),
                             "type": seg.get("type", "narration"),
-                            "text": seg.get("text", ""),
+                            "text": seg_text,
                             "speaker": seg.get("speaker"),
                             "speakerCandidates": {seg.get("speaker"): 0.9} if seg.get("speaker") else None,
                             "needsReview": False,
-                            "sentiment": {"label": seg.get("sentiment", "neutral"), "score": 0.8},
+                            "sentiment": {"label": emotion, "score": 0.8},
                             "startIndex": 0,
-                            "endIndex": len(seg.get("text", "")),
+                            "endIndex": len(seg_text),
+                            "wordCount": wc,
+                            "approxDurationSeconds": round(wc / 2.5, 1),
                         }
                         chunk_segments.append(segment)
                         all_segments.append(segment)
@@ -899,15 +918,32 @@ async def parse_text_llm(request: ParseTextLLMRequest):
     OPENROUTER_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     OPENROUTER_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENROUTER_API_KEY", "")
     
-    prompt = f"""Analyze this text and identify dialogue vs narration. For each dialogue segment, identify the speaker.
+    CANONICAL_EMOTIONS = [
+        "neutral", "happy", "sad", "angry", "fear", "disgust", "surprise",
+        "excited", "calm", "anxious", "hopeful", "melancholy", "tender", "proud",
+    ]
+    
+    speaker_hint = ""
+    if request.knownSpeakers:
+        speaker_hint = f"\nKnown speakers: {', '.join(request.knownSpeakers)}. Use these names when you recognize the same characters.\n"
+    
+    prompt = f"""Segment and chunk this text for text-to-speech. Each chunk should be 8-12 seconds of speech (~20-30 words).
 
+RULES:
+1. Always split at quote boundaries — quoted dialogue and surrounding narration must be separate chunks.
+2. Each chunk must be either "narration" or "dialogue", never mixed.
+3. Keep chunks at ~20-30 words (8-12 seconds). Split long sentences at natural pauses (commas, semicolons, conjunctions) if needed.
+4. For dialogue chunks, identify the speaker by name from context.
+5. Assign one emotion to each chunk from this list: {CANONICAL_EMOTIONS}
+6. Preserve the original text exactly — do not paraphrase or summarize.
+{speaker_hint}
 TEXT:
 {request.text[:8000]}
 
-Return a JSON object with:
+Return ONLY a JSON object with this structure:
 {{
   "segments": [
-    {{"type": "narration" or "dialogue", "text": "...", "speaker": "name or null", "sentiment": "neutral/happy/sad/angry"}}
+    {{"type": "narration" or "dialogue", "text": "exact text from the passage", "speaker": "name or null", "emotion": "one emotion from the list above"}}
   ],
   "detectedSpeakers": ["list", "of", "names"]
 }}
@@ -924,7 +960,10 @@ Return ONLY valid JSON."""
                 },
                 json={
                     "model": request.model,
-                    "messages": [{"role": "user", "content": prompt}],
+                    "messages": [
+                        {"role": "system", "content": "You are a text analysis assistant. Always respond with valid JSON only."},
+                        {"role": "user", "content": prompt},
+                    ],
                     "temperature": 0.3,
                     "max_tokens": 8192,
                 },
@@ -946,16 +985,23 @@ Return ONLY valid JSON."""
             
             segments = []
             for seg in result.get("segments", []):
+                seg_text = seg.get("text", "")
+                wc = len(seg_text.split())
+                emotion = seg.get("emotion", seg.get("sentiment", "neutral"))
+                if emotion not in CANONICAL_EMOTIONS:
+                    emotion = "neutral"
                 segments.append({
                     "id": str(uuid.uuid4()),
                     "type": seg.get("type", "narration"),
-                    "text": seg.get("text", ""),
+                    "text": seg_text,
                     "speaker": seg.get("speaker"),
                     "speakerCandidates": {seg.get("speaker"): 0.9} if seg.get("speaker") else None,
                     "needsReview": False,
-                    "sentiment": {"label": seg.get("sentiment", "neutral"), "score": 0.8},
+                    "sentiment": {"label": emotion, "score": 0.8},
                     "startIndex": 0,
-                    "endIndex": len(seg.get("text", "")),
+                    "endIndex": len(seg_text),
+                    "wordCount": wc,
+                    "approxDurationSeconds": round(wc / 2.5, 1),
                 })
             
             return {

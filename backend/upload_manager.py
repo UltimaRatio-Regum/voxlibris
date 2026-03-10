@@ -131,7 +131,9 @@ class UploadManager:
                     db.commit()
                     
                     raw_text = str(chapter.raw_text) if chapter.raw_text else ""
-                    parsed_segments, detected_speakers = self.parser.parse(raw_text)
+                    parsed_segments, detected_speakers = self.parser.parse(
+                        raw_text, known_speakers=list(all_speakers)
+                    )
                     
                     segments = [
                         {
@@ -142,7 +144,9 @@ class UploadManager:
                             "sentiment": {
                                 "label": s.sentiment.label if s.sentiment else "neutral",
                                 "score": s.sentiment.score if s.sentiment else 0.5
-                            }
+                            },
+                            "wordCount": s.wordCount,
+                            "approxDurationSeconds": s.approxDurationSeconds,
                         }
                         for s in parsed_segments
                     ]

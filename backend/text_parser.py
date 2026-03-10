@@ -32,16 +32,20 @@ class TextParser:
     WORDS_PER_SECOND = 2.5
     TARGET_CHUNK_SECONDS = 10.0
     
-    def parse(self, text: str) -> tuple[list[TextSegment], list[str]]:
+    def parse(self, text: str, known_speakers: list[str] | None = None) -> tuple[list[TextSegment], list[str]]:
         """
         Parse text into segments and detect speakers.
+        
+        Args:
+            text: The text to parse
+            known_speakers: Optional list of speaker names from previous sections
         
         Returns:
             tuple of (segments, detected_speakers)
         """
         raw_segments: list[TextSegment] = []
         speakers_set: set[str] = set()
-        speaker_history: list[str] = []
+        speaker_history: list[str] = list(known_speakers or [])
         
         current_pos = 0
         # Match straight quotes, curly double quotes (prioritize double quotes for dialogue)
@@ -164,47 +168,57 @@ class TextParser:
         
         return None
     
+    EMOTION_KEYWORDS = {
+        "fear": ["afraid", "scared", "terrified", "fear", "horror", "dread", "nervous", "frightened", "panic"],
+        "angry": ["angry", "furious", "rage", "hate", "damn", "hell", "livid", "enraged", "seething"],
+        "sad": ["sad", "cry", "tears", "grief", "mourn", "sorrow", "depressed", "heartbroken", "weep"],
+        "excited": ["excited", "amazing", "wonderful", "fantastic", "incredible", "brilliant", "thrilled"],
+        "anxious": ["anxious", "worried", "uneasy", "restless", "tense", "apprehensive", "dread"],
+        "hopeful": ["hope", "hopeful", "optimistic", "promising", "looking forward", "wish"],
+        "melancholy": ["melancholy", "wistful", "nostalgic", "bittersweet", "longing", "yearning"],
+        "tender": ["tender", "gentle", "soft", "loving", "affectionate", "warm", "caress"],
+        "proud": ["proud", "pride", "triumph", "accomplished", "victorious", "glory"],
+        "disgust": ["disgust", "revolting", "nauseating", "repulsive", "vile", "gross", "sick"],
+        "surprise": ["surprise", "surprised", "astonished", "shocked", "stunned", "unexpected", "gasp"],
+        "calm": ["calm", "peaceful", "serene", "tranquil", "quiet", "still", "relaxed", "composed"],
+    }
+
     def _analyze_sentiment(self, text: str) -> Sentiment:
         """
-        Analyze sentiment of text using TextBlob.
-        Maps polarity and subjectivity to emotional labels.
+        Analyze sentiment of text using TextBlob + keyword matching.
+        Returns one of the 14 canonical emotions.
         """
         try:
             blob = TextBlob(text)
             polarity = blob.sentiment.polarity
             subjectivity = blob.sentiment.subjectivity
-            
-            has_fear_words = any(word in text.lower() for word in 
-                ["afraid", "scared", "terrified", "fear", "horror", "dread", "nervous", "anxious"])
-            has_anger_words = any(word in text.lower() for word in
-                ["angry", "furious", "rage", "hate", "damn", "hell"])
-            has_sad_words = any(word in text.lower() for word in
-                ["sad", "cry", "tears", "grief", "mourn", "sorrow", "depressed"])
-            has_excited_words = any(word in text.lower() for word in
-                ["excited", "amazing", "wonderful", "fantastic", "incredible", "brilliant"])
-            
-            if has_fear_words:
-                label = "fearful"
-                score = 0.7 + subjectivity * 0.3
-            elif has_anger_words:
-                label = "angry"
-                score = 0.7 + abs(polarity) * 0.3
-            elif has_sad_words:
-                label = "sad"
-                score = 0.7 + subjectivity * 0.3
-            elif has_excited_words or (polarity > 0.5 and subjectivity > 0.6):
-                label = "excited"
-                score = 0.7 + polarity * 0.3
-            elif polarity > 0.3:
-                label = "positive"
+            text_lower = text.lower()
+
+            keyword_hits: dict[str, int] = {}
+            for emotion, keywords in self.EMOTION_KEYWORDS.items():
+                hits = sum(1 for kw in keywords if kw in text_lower)
+                if hits > 0:
+                    keyword_hits[emotion] = hits
+
+            if keyword_hits:
+                label = max(keyword_hits, key=keyword_hits.get)
+                score = min(1.0, 0.6 + keyword_hits[label] * 0.1 + subjectivity * 0.2)
+            elif polarity > 0.5 and subjectivity > 0.5:
+                label = "happy"
                 score = 0.5 + polarity * 0.5
-            elif polarity < -0.3:
-                label = "negative"
+            elif polarity > 0.2:
+                label = "hopeful"
+                score = 0.4 + polarity * 0.4
+            elif polarity < -0.4:
+                label = "sad"
                 score = 0.5 + abs(polarity) * 0.5
+            elif polarity < -0.2:
+                label = "melancholy"
+                score = 0.4 + abs(polarity) * 0.4
             else:
                 label = "neutral"
                 score = 0.3 + subjectivity * 0.3
-            
+
             return Sentiment(label=label, score=min(1.0, max(0.0, score)))
         except Exception:
             return Sentiment(label="neutral", score=0.5)

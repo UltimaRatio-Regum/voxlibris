@@ -45,14 +45,21 @@ class AudioProcessor:
         "happy": 0.12,
         "sad": -0.12,
         "angry": 0.12,
-        "fearful": 0.12,
-        "surprised": 0.12,
-        "disgusted": -0.12,
+        "fear": 0.12,
+        "disgust": -0.12,
+        "surprise": 0.12,
         "excited": 0.12,
         "calm": 0.0,
         "anxious": 0.06,
         "hopeful": 0.06,
         "melancholy": -0.06,
+        "tender": 0.0,
+        "proud": 0.06,
+        "fearful": 0.12,
+        "surprised": 0.12,
+        "disgusted": -0.12,
+        "positive": 0.06,
+        "negative": -0.06,
     }
     
     EMOTION_SPEED_MAP = {
@@ -60,51 +67,67 @@ class AudioProcessor:
         "happy": 1.01,
         "sad": 0.99,
         "angry": 1.01,
-        "fearful": 1.01,
-        "surprised": 1.01,
-        "disgusted": 0.99,
+        "fear": 1.01,
+        "disgust": 0.99,
+        "surprise": 1.01,
         "excited": 1.01,
         "calm": 0.99,
         "anxious": 1.01,
         "hopeful": 1.00,
         "melancholy": 0.99,
+        "tender": 0.99,
+        "proud": 1.00,
+        "fearful": 1.01,
+        "surprised": 1.01,
+        "disgusted": 0.99,
+        "positive": 1.00,
+        "negative": 0.99,
     }
     
-    # Volume adjustments per emotion (1.0 = no change, 1.1 = 10% louder, 0.95 = 5% quieter)
-    # Volume is applied as a simple amplitude multiplier
     EMOTION_VOLUME_MAP = {
         "neutral": 1.00,
         "happy": 1.05,
         "sad": 0.95,
         "angry": 1.10,
-        "fearful": 0.95,
-        "surprised": 1.08,
-        "disgusted": 1.02,
+        "fear": 0.95,
+        "disgust": 1.02,
+        "surprise": 1.08,
         "excited": 1.10,
         "calm": 0.95,
         "anxious": 1.03,
         "hopeful": 1.02,
         "melancholy": 0.93,
+        "tender": 0.95,
+        "proud": 1.05,
+        "fearful": 0.95,
+        "surprised": 1.08,
+        "disgusted": 1.02,
+        "positive": 1.02,
+        "negative": 0.98,
     }
     
-    # Intensity/exaggeration for Chatterbox TTS (0.0 to 1.0 scale)
-    # Higher values = more emotional expression in the voice
     EMOTION_INTENSITY_MAP = {
         "neutral": 0.3,
         "happy": 0.6,
         "sad": 0.5,
         "angry": 0.7,
-        "fearful": 0.6,
-        "surprised": 0.7,
-        "disgusted": 0.5,
+        "fear": 0.6,
+        "disgust": 0.5,
+        "surprise": 0.7,
         "excited": 0.8,
         "calm": 0.2,
         "anxious": 0.6,
         "hopeful": 0.5,
         "melancholy": 0.4,
+        "tender": 0.4,
+        "proud": 0.6,
+        "fearful": 0.6,
+        "surprised": 0.7,
+        "disgusted": 0.5,
+        "positive": 0.5,
+        "negative": 0.5,
     }
     
-    # Valid emotions that the LLM should use
     VALID_EMOTIONS = list(EMOTION_PITCH_MAP.keys())
     
     def get_audio_duration(self, file_path: str) -> float:

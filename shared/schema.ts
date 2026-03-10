@@ -71,8 +71,13 @@ export const segmentTypeEnum = z.enum(["narration", "dialogue"]);
 export type SegmentType = z.infer<typeof segmentTypeEnum>;
 
 // Sentiment for prosody control
+export const CANONICAL_EMOTIONS = [
+  "neutral", "happy", "sad", "angry", "fear", "disgust", "surprise",
+  "excited", "calm", "anxious", "hopeful", "melancholy", "tender", "proud",
+] as const;
+
 export const sentimentSchema = z.object({
-  label: z.enum(["positive", "negative", "neutral", "excited", "sad", "angry", "fearful"]),
+  label: z.string(),
   score: z.number().min(0).max(1),
 });
 
