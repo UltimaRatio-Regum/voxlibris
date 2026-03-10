@@ -30,8 +30,12 @@ from models import (
     GenerateRequest,
     GenerateResponse,
 )
-from database import get_db_session, TTSEngineEndpoint, VoiceLibraryEntry, CustomVoice
+from database import (
+    get_db_session, TTSEngineEndpoint, VoiceLibraryEntry, CustomVoice,
+    Project, ProjectChapter, ProjectSection, ProjectChunk, ProjectAudioFile
+)
 from remote_tts_client import RemoteTTSClient
+from project_segmenter import segment_project_background, split_into_sections
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1770,6 +1774,547 @@ async def update_tts_settings(request: TTSSettingsRequest):
     }
     save_tts_settings(settings)
     return {"success": True, **settings}
+
+
+class CreateProjectRequest(BaseModel):
+    title: str
+    text: Optional[str] = None
+
+
+class UpdateProjectSettingsRequest(BaseModel):
+    ttsEngine: Optional[str] = None
+    narratorVoiceId: Optional[str] = None
+    exaggeration: Optional[float] = None
+    pauseDuration: Optional[float] = None
+    speakersJson: Optional[str] = None
+
+
+class UpdateChapterRequest(BaseModel):
+    ttsEngine: Optional[str] = None
+    narratorVoiceId: Optional[str] = None
+    speakersJson: Optional[str] = None
+
+
+class UpdateChunkRequest(BaseModel):
+    speakerOverride: Optional[str] = None
+    emotionOverride: Optional[str] = None
+
+
+class GenerateProjectAudioRequest(BaseModel):
+    scopeType: str
+    scopeId: str
+
+
+def _serialize_project_list(project: Project) -> dict:
+    db = get_db_session()
+    try:
+        chapter_count = db.query(ProjectChapter).filter(
+            ProjectChapter.project_id == project.id
+        ).count()
+        total_chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
+            ProjectChapter.project_id == project.id
+        ).count()
+    finally:
+        db.close()
+
+    return {
+        "id": project.id,
+        "title": project.title,
+        "status": project.status,
+        "sourceType": project.source_type,
+        "chapterCount": chapter_count,
+        "totalChunks": total_chunks,
+        "createdAt": project.created_at.isoformat() if project.created_at else None,
+        "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
+    }
+
+
+def _serialize_project_full(project: Project, db) -> dict:
+    chapters = db.query(ProjectChapter).filter(
+        ProjectChapter.project_id == project.id
+    ).order_by(ProjectChapter.chapter_index).all()
+
+    chapters_data = []
+    for ch in chapters:
+        sections = db.query(ProjectSection).filter(
+            ProjectSection.chapter_id == ch.id
+        ).order_by(ProjectSection.section_index).all()
+
+        sections_data = []
+        chapter_word_count = 0
+        for sec in sections:
+            chunks = db.query(ProjectChunk).filter(
+                ProjectChunk.section_id == sec.id
+            ).order_by(ProjectChunk.chunk_index).all()
+
+            chunks_data = []
+            for chunk in chunks:
+                chapter_word_count += chunk.word_count
+                chunks_data.append({
+                    "id": chunk.id,
+                    "sectionId": chunk.section_id,
+                    "chunkIndex": chunk.chunk_index,
+                    "text": chunk.text,
+                    "segmentType": chunk.segment_type,
+                    "speaker": chunk.speaker,
+                    "emotion": chunk.emotion,
+                    "speakerOverride": chunk.speaker_override,
+                    "emotionOverride": chunk.emotion_override,
+                    "wordCount": chunk.word_count,
+                    "approxDurationSeconds": chunk.approx_duration_seconds,
+                })
+
+            sections_data.append({
+                "id": sec.id,
+                "chapterId": sec.chapter_id,
+                "sectionIndex": sec.section_index,
+                "status": sec.status,
+                "errorMessage": sec.error_message,
+                "chunks": chunks_data,
+            })
+
+        chapters_data.append({
+            "id": ch.id,
+            "projectId": ch.project_id,
+            "chapterIndex": ch.chapter_index,
+            "title": ch.title,
+            "status": ch.status,
+            "speakersJson": ch.speakers_json,
+            "ttsEngine": ch.tts_engine,
+            "narratorVoiceId": ch.narrator_voice_id,
+            "errorMessage": ch.error_message,
+            "wordCount": chapter_word_count,
+            "sections": sections_data,
+        })
+
+    audio_files = db.query(ProjectAudioFile).filter(
+        ProjectAudioFile.project_id == project.id
+    ).order_by(ProjectAudioFile.created_at.desc()).all()
+
+    audio_data = [{
+        "id": af.id,
+        "projectId": af.project_id,
+        "scopeType": af.scope_type,
+        "scopeId": af.scope_id,
+        "format": af.format,
+        "durationSeconds": af.duration_seconds,
+        "ttsEngine": af.tts_engine,
+        "voiceId": af.voice_id,
+        "settingsJson": af.settings_json,
+        "createdAt": af.created_at.isoformat() if af.created_at else None,
+    } for af in audio_files]
+
+    return {
+        "id": project.id,
+        "title": project.title,
+        "status": project.status,
+        "ttsEngine": project.tts_engine,
+        "narratorVoiceId": project.narrator_voice_id,
+        "exaggeration": project.exaggeration,
+        "pauseDuration": project.pause_duration,
+        "speakersJson": project.speakers_json,
+        "sourceType": project.source_type,
+        "sourceFilename": project.source_filename,
+        "errorMessage": project.error_message,
+        "createdAt": project.created_at.isoformat() if project.created_at else None,
+        "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
+        "chapters": chapters_data,
+        "audioFiles": audio_data,
+    }
+
+
+@app.get("/projects")
+async def list_projects():
+    db = get_db_session()
+    try:
+        projects = db.query(Project).order_by(Project.updated_at.desc()).all()
+        return [_serialize_project_list(p) for p in projects]
+    finally:
+        db.close()
+
+
+@app.post("/projects")
+async def create_project(
+    title: str = Form(...),
+    text: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+):
+    db = get_db_session()
+    try:
+        project = Project(
+            id=str(uuid.uuid4()),
+            title=title,
+            status="draft",
+        )
+
+        if file and file.filename:
+            file_content = await file.read()
+            ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+
+            if ext == "epub":
+                from epub_parser import parse_epub
+                chapters_data = parse_epub(file_content)
+                project.source_type = "epub"
+                project.source_filename = file.filename
+            elif ext == "txt":
+                from epub_parser import parse_txt
+                chapters_data = parse_txt(file_content)
+                project.source_type = "text"
+                project.source_filename = file.filename
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported file type. Use .txt or .epub")
+
+            db.add(project)
+            db.flush()
+
+            for idx, (ch_title, ch_text) in enumerate(chapters_data):
+                chapter = ProjectChapter(
+                    id=str(uuid.uuid4()),
+                    project_id=project.id,
+                    chapter_index=idx,
+                    title=ch_title,
+                    raw_text=ch_text,
+                    status="pending",
+                )
+                db.add(chapter)
+
+        elif text:
+            project.source_type = "text"
+            db.add(project)
+            db.flush()
+
+            chapter = ProjectChapter(
+                id=str(uuid.uuid4()),
+                project_id=project.id,
+                chapter_index=0,
+                title=title,
+                raw_text=text,
+                status="pending",
+            )
+            db.add(chapter)
+        else:
+            raise HTTPException(status_code=400, detail="Either text or file is required")
+
+        db.commit()
+        db.refresh(project)
+
+        result = _serialize_project_full(project, db)
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}")
+async def get_project(project_id: str):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return _serialize_project_full(project, db)
+    finally:
+        db.close()
+
+
+@app.patch("/projects/{project_id}")
+async def update_project(project_id: str, request: UpdateProjectSettingsRequest):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        if request.ttsEngine is not None:
+            project.tts_engine = request.ttsEngine
+        if request.narratorVoiceId is not None:
+            project.narrator_voice_id = request.narratorVoiceId
+        if request.exaggeration is not None:
+            project.exaggeration = request.exaggeration
+        if request.pauseDuration is not None:
+            project.pause_duration = request.pauseDuration
+        if request.speakersJson is not None:
+            project.speakers_json = request.speakersJson
+
+        project.updated_at = datetime.utcnow()
+        db.commit()
+
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.delete("/projects/{project_id}")
+async def delete_project(project_id: str):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        db.delete(project)
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.patch("/projects/{project_id}/chapters/{chapter_id}")
+async def update_chapter(project_id: str, chapter_id: str, request: UpdateChapterRequest):
+    db = get_db_session()
+    try:
+        chapter = db.query(ProjectChapter).filter(
+            ProjectChapter.id == chapter_id,
+            ProjectChapter.project_id == project_id
+        ).first()
+        if not chapter:
+            raise HTTPException(status_code=404, detail="Chapter not found")
+
+        if request.ttsEngine is not None:
+            chapter.tts_engine = request.ttsEngine
+        if request.narratorVoiceId is not None:
+            chapter.narrator_voice_id = request.narratorVoiceId
+        if request.speakersJson is not None:
+            chapter.speakers_json = request.speakersJson
+
+        chapter.updated_at = datetime.utcnow()
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.patch("/projects/{project_id}/chunks/{chunk_id}")
+async def update_chunk(project_id: str, chunk_id: str, request: UpdateChunkRequest):
+    db = get_db_session()
+    try:
+        chunk = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
+            ProjectChunk.id == chunk_id,
+            ProjectChapter.project_id == project_id
+        ).first()
+        if not chunk:
+            raise HTTPException(status_code=404, detail="Chunk not found")
+
+        if request.speakerOverride is not None:
+            chunk.speaker_override = request.speakerOverride if request.speakerOverride != "" else None
+        if request.emotionOverride is not None:
+            chunk.emotion_override = request.emotionOverride if request.emotionOverride != "" else None
+
+        chunk.updated_at = datetime.utcnow()
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.post("/projects/{project_id}/segment")
+async def segment_project(project_id: str):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        if project.status not in ("draft", "failed", "segmented"):
+            raise HTTPException(status_code=400, detail=f"Cannot segment project in state: {project.status}")
+
+        db.query(ProjectChunk).filter(
+            ProjectChunk.section_id.in_(
+                db.query(ProjectSection.id).join(ProjectChapter).filter(
+                    ProjectChapter.project_id == project_id
+                )
+            )
+        ).delete(synchronize_session=False)
+        db.query(ProjectSection).filter(
+            ProjectSection.chapter_id.in_(
+                db.query(ProjectChapter.id).filter(
+                    ProjectChapter.project_id == project_id
+                )
+            )
+        ).delete(synchronize_session=False)
+
+        for ch in db.query(ProjectChapter).filter(ProjectChapter.project_id == project_id).all():
+            ch.status = "pending"
+            ch.error_message = None
+
+        project.status = "segmenting"
+        project.error_message = None
+        db.commit()
+    finally:
+        db.close()
+
+    segment_project_background(project_id)
+    return {"success": True, "message": "Segmentation started"}
+
+
+@app.post("/projects/{project_id}/generate")
+async def generate_project_audio(project_id: str, request: GenerateProjectAudioRequest):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        chunks_to_generate = []
+
+        if request.scopeType == "chunk":
+            chunk = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
+                ProjectChunk.id == request.scopeId,
+                ProjectChapter.project_id == project_id
+            ).first()
+            if not chunk:
+                raise HTTPException(status_code=404, detail="Chunk not found")
+            section = db.query(ProjectSection).filter(ProjectSection.id == chunk.section_id).first()
+            chapter = db.query(ProjectChapter).filter(ProjectChapter.id == section.chapter_id).first()
+            chunks_to_generate.append((chunk, chapter))
+
+        elif request.scopeType == "section":
+            section = db.query(ProjectSection).join(ProjectChapter).filter(
+                ProjectSection.id == request.scopeId,
+                ProjectChapter.project_id == project_id
+            ).first()
+            if not section:
+                raise HTTPException(status_code=404, detail="Section not found")
+            chapter = db.query(ProjectChapter).filter(ProjectChapter.id == section.chapter_id).first()
+            chunks = db.query(ProjectChunk).filter(
+                ProjectChunk.section_id == section.id
+            ).order_by(ProjectChunk.chunk_index).all()
+            chunks_to_generate = [(c, chapter) for c in chunks]
+
+        elif request.scopeType == "chapter":
+            chapter = db.query(ProjectChapter).filter(
+                ProjectChapter.id == request.scopeId,
+                ProjectChapter.project_id == project_id
+            ).first()
+            if not chapter:
+                raise HTTPException(status_code=404, detail="Chapter not found")
+            chunks = db.query(ProjectChunk).join(ProjectSection).filter(
+                ProjectSection.chapter_id == chapter.id
+            ).order_by(ProjectChunk.chunk_index).all()
+            chunks_to_generate = [(c, chapter) for c in chunks]
+
+        elif request.scopeType == "project":
+            chapters = db.query(ProjectChapter).filter(
+                ProjectChapter.project_id == project_id
+            ).order_by(ProjectChapter.chapter_index).all()
+            for chapter in chapters:
+                chunks = db.query(ProjectChunk).join(ProjectSection).filter(
+                    ProjectSection.chapter_id == chapter.id
+                ).order_by(ProjectChunk.chunk_index).all()
+                chunks_to_generate.extend([(c, chapter) for c in chunks])
+        else:
+            raise HTTPException(status_code=400, detail="Invalid scope type")
+
+        if not chunks_to_generate:
+            raise HTTPException(status_code=400, detail="No chunks found for the given scope")
+
+        tts_engine = project.tts_engine
+        narrator_voice_id = project.narrator_voice_id
+        speakers = json.loads(project.speakers_json) if project.speakers_json else {}
+        exaggeration = project.exaggeration
+        pause_duration = project.pause_duration
+
+        segments_for_job = []
+        for chunk, chapter in chunks_to_generate:
+            ch_engine = chapter.tts_engine or tts_engine
+            ch_narrator = chapter.narrator_voice_id or narrator_voice_id
+
+            speaker = chunk.speaker_override or chunk.speaker
+            emotion = chunk.emotion_override or chunk.emotion
+
+            voice_id = ch_narrator
+            if speaker and speaker in speakers:
+                sp_config = speakers[speaker]
+                if isinstance(sp_config, dict) and sp_config.get("voiceSampleId"):
+                    voice_id = sp_config["voiceSampleId"]
+
+            segments_for_job.append({
+                "id": chunk.id,
+                "text": chunk.text,
+                "type": chunk.segment_type,
+                "speaker": speaker,
+                "sentiment": {"label": emotion} if emotion else None,
+                "voice_id": voice_id,
+                "tts_engine": ch_engine,
+            })
+
+        from job_manager import create_job
+        from job_runner import start_job_async
+
+        job_title = f"{project.title} - {request.scopeType}: {request.scopeId[:8]}"
+        job_id = create_job(
+            title=job_title,
+            segments=segments_for_job,
+            config={
+                "defaultExaggeration": exaggeration,
+                "pauseBetweenSegments": pause_duration,
+                "speakers": speakers,
+                "ttsEngine": tts_engine,
+                "narratorVoiceId": narrator_voice_id,
+                "projectId": project_id,
+                "scopeType": request.scopeType,
+                "scopeId": request.scopeId,
+            }
+        )
+
+        start_job_async(job_id)
+
+        return {"success": True, "jobId": job_id, "totalSegments": len(segments_for_job)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate project audio: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}/audio")
+async def list_project_audio(project_id: str):
+    db = get_db_session()
+    try:
+        audio_files = db.query(ProjectAudioFile).filter(
+            ProjectAudioFile.project_id == project_id
+        ).order_by(ProjectAudioFile.created_at.desc()).all()
+
+        return [{
+            "id": af.id,
+            "projectId": af.project_id,
+            "scopeType": af.scope_type,
+            "scopeId": af.scope_id,
+            "format": af.format,
+            "durationSeconds": af.duration_seconds,
+            "ttsEngine": af.tts_engine,
+            "voiceId": af.voice_id,
+            "settingsJson": af.settings_json,
+            "createdAt": af.created_at.isoformat() if af.created_at else None,
+        } for af in audio_files]
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}/audio/{audio_file_id}")
+async def get_project_audio(project_id: str, audio_file_id: str):
+    db = get_db_session()
+    try:
+        af = db.query(ProjectAudioFile).filter(
+            ProjectAudioFile.id == audio_file_id,
+            ProjectAudioFile.project_id == project_id
+        ).first()
+        if not af:
+            raise HTTPException(status_code=404, detail="Audio file not found")
+
+        media_type = "audio/mpeg" if af.format == "mp3" else "audio/wav"
+        return Response(content=af.audio_data, media_type=media_type)
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":

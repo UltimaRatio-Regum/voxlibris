@@ -231,6 +231,116 @@ export const ttsSegmentSchema = z.object({
 
 export type TTSSegmentStatus = z.infer<typeof ttsSegmentSchema>;
 
+// Project system types
+export const projectStatusSchema = z.enum(["draft", "segmenting", "segmented", "generating", "completed", "failed"]);
+export type ProjectStatus = z.infer<typeof projectStatusSchema>;
+
+export const projectChunkSchema = z.object({
+  id: z.string(),
+  sectionId: z.string(),
+  chunkIndex: z.number(),
+  text: z.string(),
+  segmentType: z.enum(["narration", "dialogue"]),
+  speaker: z.string().nullable(),
+  emotion: z.string(),
+  speakerOverride: z.string().nullable(),
+  emotionOverride: z.string().nullable(),
+  wordCount: z.number(),
+  approxDurationSeconds: z.number(),
+});
+export type ProjectChunk = z.infer<typeof projectChunkSchema>;
+
+export const projectSectionSchema = z.object({
+  id: z.string(),
+  chapterId: z.string(),
+  sectionIndex: z.number(),
+  status: z.string(),
+  errorMessage: z.string().nullable(),
+  chunks: z.array(projectChunkSchema).optional(),
+});
+export type ProjectSection = z.infer<typeof projectSectionSchema>;
+
+export const projectChapterSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  chapterIndex: z.number(),
+  title: z.string().nullable(),
+  status: z.string(),
+  speakersJson: z.string().nullable(),
+  ttsEngine: z.string().nullable(),
+  narratorVoiceId: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  wordCount: z.number().optional(),
+  sections: z.array(projectSectionSchema).optional(),
+});
+export type ProjectChapter = z.infer<typeof projectChapterSchema>;
+
+export const projectAudioFileSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  scopeType: z.string(),
+  scopeId: z.string(),
+  format: z.string(),
+  durationSeconds: z.number().nullable(),
+  ttsEngine: z.string().nullable(),
+  voiceId: z.string().nullable(),
+  settingsJson: z.string().nullable(),
+  createdAt: z.string().nullable(),
+});
+export type ProjectAudioFile = z.infer<typeof projectAudioFileSchema>;
+
+export const projectSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: projectStatusSchema,
+  ttsEngine: z.string(),
+  narratorVoiceId: z.string().nullable(),
+  exaggeration: z.number(),
+  pauseDuration: z.number(),
+  speakersJson: z.string().nullable(),
+  sourceType: z.string(),
+  sourceFilename: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  chapters: z.array(projectChapterSchema).optional(),
+  audioFiles: z.array(projectAudioFileSchema).optional(),
+});
+export type ProjectData = z.infer<typeof projectSchema>;
+
+export const projectListItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: projectStatusSchema,
+  sourceType: z.string(),
+  chapterCount: z.number(),
+  totalChunks: z.number(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+export type ProjectListItem = z.infer<typeof projectListItemSchema>;
+
+export const createProjectRequestSchema = z.object({
+  title: z.string().min(1),
+  text: z.string().optional(),
+});
+export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
+
+export const updateProjectSettingsSchema = z.object({
+  ttsEngine: z.string().optional(),
+  narratorVoiceId: z.string().nullable().optional(),
+  exaggeration: z.number().min(0).max(1).optional(),
+  pauseDuration: z.number().min(0).max(3000).optional(),
+  speakersJson: z.string().nullable().optional(),
+});
+export type UpdateProjectSettings = z.infer<typeof updateProjectSettingsSchema>;
+
+export const generateProjectAudioRequestSchema = z.object({
+  scopeType: z.enum(["chunk", "section", "chapter", "project"]),
+  scopeId: z.string(),
+});
+export type GenerateProjectAudioRequest = z.infer<typeof generateProjectAudioRequestSchema>;
+
 // Legacy user types (kept for compatibility)
 export const userSchema = z.object({
   id: z.string(),

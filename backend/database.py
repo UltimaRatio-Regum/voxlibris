@@ -174,6 +174,106 @@ class CustomVoice(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class ProjectStatus(str, Enum):
+    DRAFT = "draft"
+    SEGMENTING = "segmenting"
+    SEGMENTED = "segmented"
+    GENERATING = "generating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    title = Column(String, nullable=False)
+    status = Column(String, nullable=False, default=ProjectStatus.DRAFT.value)
+    tts_engine = Column(String, nullable=False, default="edge-tts")
+    narrator_voice_id = Column(String, nullable=True)
+    exaggeration = Column(Float, nullable=False, default=0.5)
+    pause_duration = Column(Float, nullable=False, default=500.0)
+    speakers_json = Column(Text, nullable=True)
+    source_type = Column(String, nullable=False, default="text")
+    source_filename = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    chapters = relationship("ProjectChapter", back_populates="project", cascade="all, delete-orphan", order_by="ProjectChapter.chapter_index")
+
+
+class ProjectChapter(Base):
+    __tablename__ = "project_chapters"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    chapter_index = Column(Integer, nullable=False)
+    title = Column(String, nullable=True)
+    raw_text = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="pending")
+    speakers_json = Column(Text, nullable=True)
+    tts_engine = Column(String, nullable=True)
+    narrator_voice_id = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = relationship("Project", back_populates="chapters")
+    sections = relationship("ProjectSection", back_populates="chapter", cascade="all, delete-orphan", order_by="ProjectSection.section_index")
+
+
+class ProjectSection(Base):
+    __tablename__ = "project_sections"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    chapter_id = Column(String, ForeignKey("project_chapters.id", ondelete="CASCADE"), nullable=False)
+    section_index = Column(Integer, nullable=False)
+    status = Column(String, nullable=False, default="pending")
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    chapter = relationship("ProjectChapter", back_populates="sections")
+    chunks = relationship("ProjectChunk", back_populates="section", cascade="all, delete-orphan", order_by="ProjectChunk.chunk_index")
+
+
+class ProjectChunk(Base):
+    __tablename__ = "project_chunks"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    section_id = Column(String, ForeignKey("project_sections.id", ondelete="CASCADE"), nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    segment_type = Column(String, nullable=False, default="narration")
+    speaker = Column(String, nullable=True)
+    emotion = Column(String, nullable=False, default="neutral")
+    speaker_override = Column(String, nullable=True)
+    emotion_override = Column(String, nullable=True)
+    word_count = Column(Integer, nullable=False, default=0)
+    approx_duration_seconds = Column(Float, nullable=False, default=0.0)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    section = relationship("ProjectSection", back_populates="chunks")
+
+
+class ProjectAudioFile(Base):
+    __tablename__ = "project_audio_files"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    scope_type = Column(String, nullable=False)
+    scope_id = Column(String, nullable=False)
+    audio_data = Column(LargeBinary, nullable=False)
+    format = Column(String, nullable=False, default="mp3")
+    duration_seconds = Column(Float, nullable=True)
+    tts_engine = Column(String, nullable=True)
+    voice_id = Column(String, nullable=True)
+    settings_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 engine = None
 SessionLocal = None
 
