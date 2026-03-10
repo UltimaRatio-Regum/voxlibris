@@ -96,7 +96,8 @@ class TextParser:
                 end_index=len(text),
             ))
         
-        chunked_segments = self._chunk_all_segments(raw_segments)
+        paragraph_segments = self._split_by_paragraphs(raw_segments)
+        chunked_segments = self._chunk_all_segments(paragraph_segments)
         
         return chunked_segments, sorted(list(speakers_set))
     
@@ -205,6 +206,39 @@ class TextParser:
         except Exception:
             return Sentiment(label="neutral", score=0.5)
     
+    def _split_by_paragraphs(self, segments: list[TextSegment]) -> list[TextSegment]:
+        """
+        Split segments at paragraph boundaries (double newlines).
+        Dialogue segments are kept intact; narration segments are split
+        at paragraph breaks to create natural segment boundaries.
+        """
+        result: list[TextSegment] = []
+        
+        for segment in segments:
+            if segment.type == "dialogue":
+                result.append(segment)
+                continue
+            
+            paragraphs = re.split(r'\n\s*\n', segment.text)
+            paragraphs = [p.strip() for p in paragraphs if p.strip()]
+            
+            if len(paragraphs) <= 1:
+                result.append(segment)
+                continue
+            
+            for para_text in paragraphs:
+                result.append(TextSegment(
+                    id=str(uuid.uuid4()),
+                    type=segment.type,
+                    text=para_text,
+                    speaker=segment.speaker,
+                    sentiment=self._analyze_sentiment(para_text),
+                    startIndex=segment.startIndex,
+                    endIndex=segment.endIndex,
+                ))
+        
+        return result
+
     def _chunk_all_segments(self, segments: list[TextSegment]) -> list[TextSegment]:
         """
         Chunk all segments into approximately 10-second intervals.
