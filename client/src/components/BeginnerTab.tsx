@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { TTS_ENGINES, isVoiceCloningEngine } from "@/lib/tts-engines";
+import type { RegisteredEngine } from "@/components/SettingsPanel";
 import type { TTSEngine, EdgeVoice, LibraryVoice } from "@shared/schema";
 
 interface Upload {
@@ -66,6 +67,10 @@ export function BeginnerTab() {
   const { data: libraryVoices = [] } = useQuery<LibraryVoice[]>({
     queryKey: ["/api/voice-library"],
     enabled: isVoiceCloningEngine(ttsEngine),
+  });
+
+  const { data: registeredEngines = [] } = useQuery<RegisteredEngine[]>({
+    queryKey: ["/api/tts-engines"],
   });
 
   useEffect(() => {
@@ -166,7 +171,14 @@ export function BeginnerTab() {
         label: v.name,
       }));
     }
-    return [];
+    const registeredEngine = registeredEngines.find(e => e.engine_id === ttsEngine);
+    if (registeredEngine?.builtin_voices?.length) {
+      return registeredEngine.builtin_voices.map(v => ({
+        value: `remote:${v.id}`,
+        label: v.name,
+      }));
+    }
+    return [{ value: "default", label: "Default Voice" }];
   };
 
   const voiceOptions = getVoiceOptions();
@@ -224,6 +236,11 @@ export function BeginnerTab() {
                   {TTS_ENGINES.map((engine) => (
                     <SelectItem key={engine.id} value={engine.id}>
                       {engine.label}
+                    </SelectItem>
+                  ))}
+                  {registeredEngines.map((engine) => (
+                    <SelectItem key={engine.engine_id} value={engine.engine_id}>
+                      {engine.engine_name}
                     </SelectItem>
                   ))}
                 </SelectContent>

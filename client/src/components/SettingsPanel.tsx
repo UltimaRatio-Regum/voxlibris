@@ -5,7 +5,9 @@ import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -13,10 +15,22 @@ import { Badge } from "@/components/ui/badge";
 import { TTS_ENGINES } from "@/lib/tts-engines";
 import type { TTSEngine } from "@shared/schema";
 
+export interface RegisteredEngine {
+  id: number;
+  engine_id: string;
+  engine_name: string;
+  base_url: string;
+  supports_voice_cloning: boolean;
+  builtin_voices: Array<{ id: string; name: string; language?: string }>;
+  supported_emotions: string[];
+  last_test_success: boolean | null;
+}
+
 interface SettingsPanelProps {
   exaggeration: number;
   pauseDuration: number;
   ttsEngine: TTSEngine;
+  registeredEngines?: RegisteredEngine[];
   onExaggerationChange: (value: number) => void;
   onPauseDurationChange: (value: number) => void;
   onTTSEngineChange: (engine: TTSEngine) => void;
@@ -26,12 +40,13 @@ export function SettingsPanel({
   exaggeration,
   pauseDuration,
   ttsEngine,
+  registeredEngines = [],
   onExaggerationChange,
   onPauseDurationChange,
   onTTSEngineChange,
 }: SettingsPanelProps) {
-  const selectedEngine = TTS_ENGINES.find(e => e.id === ttsEngine);
-
+  const selectedBuiltIn = TTS_ENGINES.find(e => e.id === ttsEngine);
+  const selectedRegistered = registeredEngines.find(e => e.engine_id === ttsEngine);
 
   return (
     <Card>
@@ -60,23 +75,49 @@ export function SettingsPanel({
               <SelectValue placeholder="Select TTS engine" />
             </SelectTrigger>
             <SelectContent>
-              {TTS_ENGINES.map((engine) => (
-                <SelectItem key={engine.id} value={engine.id} data-testid={`option-engine-${engine.id}`}>
-                  <div className="flex items-center gap-2">
-                    <span>{engine.name}</span>
-                    {engine.badge && (
-                      <Badge variant={engine.badgeVariant} className="text-xs py-0 px-1.5">
-                        {engine.badge}
-                      </Badge>
-                    )}
-                  </div>
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectLabel>Built-in Engines</SelectLabel>
+                {TTS_ENGINES.map((engine) => (
+                  <SelectItem key={engine.id} value={engine.id} data-testid={`option-engine-${engine.id}`}>
+                    <div className="flex items-center gap-2">
+                      <span>{engine.name}</span>
+                      {engine.badge && (
+                        <Badge variant={engine.badgeVariant} className="text-xs py-0 px-1.5">
+                          {engine.badge}
+                        </Badge>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+              {registeredEngines.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Remote Engines</SelectLabel>
+                  {registeredEngines.map((engine) => (
+                    <SelectItem key={engine.engine_id} value={engine.engine_id} data-testid={`option-engine-${engine.engine_id}`}>
+                      <div className="flex items-center gap-2">
+                        <span>{engine.engine_name}</span>
+                        {engine.supports_voice_cloning && (
+                          <Badge variant="secondary" className="text-xs py-0 px-1.5">
+                            Cloning
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
             </SelectContent>
           </Select>
-          {selectedEngine && (
+          {selectedBuiltIn && (
             <p className="text-xs text-muted-foreground">
-              {selectedEngine.description}
+              {selectedBuiltIn.description}
+            </p>
+          )}
+          {selectedRegistered && (
+            <p className="text-xs text-muted-foreground">
+              Remote engine: {selectedRegistered.base_url}
+              {selectedRegistered.supports_voice_cloning ? " • Supports voice cloning" : ""}
             </p>
           )}
         </div>

@@ -17,8 +17,9 @@ VoxLibris is a web application designed to transform plain text into expressive 
 - **Routing**: Wouter
 - **UI Components**: Shadcn/ui
 - **UI/UX Decisions**: Four-tab layout (Beginner, Advanced, Jobs, Settings), file upload workflow, wizard-style generation flow (Upload → Analyzing → Voice Selection → Generate), real-time progress updates, dark mode support.
-- **Settings Tab**: Default TTS engine/voice selection (persisted to localStorage), emotion prosody configuration table with pitch/speed/volume weights (persisted to prosody_settings.json).
-- **TTS Engine Configuration**: Centralized in `client/src/lib/tts-engines.ts` with `TTS_ENGINES` array defining built-in engines (Edge TTS, Soprano). Additional engines are registered dynamically via the REST DI system (Settings tab). Helper functions: `isVoiceCloningEngine()`, `getTTSEngine()`, `getVoiceCloningEngines()`, `getLocalEngines()`.
+- **Advanced Tab Layout**: Two-column grid. Left: TextInput → TextPreview. Right: Generation Settings (engine, intensity, pause) → Voice Assignment (appears after text analysis, with narrator + detected speaker dropdowns, inline "Upload New Voice" option).
+- **Settings Tab**: Default TTS engine/voice selection (persisted to localStorage), Custom Voices management (upload/rename/delete/play), emotion prosody configuration table with pitch/speed/volume weights (persisted to prosody_settings.json), engine registration (REST DI), voice library browser.
+- **TTS Engine Configuration**: Centralized in `client/src/lib/tts-engines.ts` with `TTS_ENGINES` array defining built-in engines (Edge TTS, Soprano). Registered remote engines fetched from `/api/tts-engines` and merged into engine dropdowns in both Advanced and Beginner tabs. `RegisteredEngine` type exported from `SettingsPanel.tsx`. Helper functions: `isVoiceCloningEngine()`, `getTTSEngine()`, `getVoiceCloningEngines()`, `getLocalEngines()`.
 
 ### Backend (Python + FastAPI)
 - **Framework**: FastAPI with uvicorn

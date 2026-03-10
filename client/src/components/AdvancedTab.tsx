@@ -5,13 +5,11 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { TextInput } from "@/components/TextInput";
-import { VoiceSampleManager } from "@/components/VoiceSampleManager";
-import { VoiceLibrary } from "@/components/VoiceLibrary";
 import { TextPreview } from "@/components/TextPreview";
 import { SpeakerAssignment } from "@/components/SpeakerAssignment";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { GenerationProgress } from "@/components/GenerationProgress";
-import { SettingsPanel } from "@/components/SettingsPanel";
+import { SettingsPanel, type RegisteredEngine } from "@/components/SettingsPanel";
 import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse, LibraryVoice, TTSEngine, EdgeVoice } from "@shared/schema";
 
 export function AdvancedTab() {
@@ -22,7 +20,6 @@ export function AdvancedTab() {
   const [segments, setSegments] = useState<TextSegment[]>([]);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
 
-  const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [narratorVoiceId, setNarratorVoiceId] = useState<string | null>(null);
   const [speakerConfigs, setSpeakerConfigs] = useState<Record<string, SpeakerConfig>>({});
 
@@ -47,7 +44,7 @@ export function AdvancedTab() {
     queryKey: ["/api/voices"],
   });
 
-  const { data: libraryVoices = [], isLoading: isLibraryLoading } = useQuery<LibraryVoice[]>({
+  const { data: libraryVoices = [] } = useQuery<LibraryVoice[]>({
     queryKey: ["/api/voice-library"],
   });
 
@@ -57,8 +54,9 @@ export function AdvancedTab() {
   });
   const edgeVoices = edgeVoicesData?.voices ?? [];
 
-
-  const [selectedLibraryVoiceId, setSelectedLibraryVoiceId] = useState<string | null>(null);
+  const { data: registeredEngines = [] } = useQuery<RegisteredEngine[]>({
+    queryKey: ["/api/tts-engines"],
+  });
 
   const detectedSpeakers = Array.from(new Set(segments.filter((s) => s.speaker).map((s) => s.speaker!)));
 
@@ -98,52 +96,6 @@ export function AdvancedTab() {
         title: "Analysis failed",
         description: error.message,
         variant: "destructive",
-      });
-    },
-  });
-
-  const uploadVoiceMutation = useMutation({
-    mutationFn: async ({ name, file }: { name: string; file: File }) => {
-      const formData = new FormData();
-      formData.append("name", name);
-      formData.append("file", file);
-      
-      const response = await fetch("/api/voices/upload", {
-        method: "POST",
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to upload voice sample");
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/voices"] });
-      toast({
-        title: "Voice uploaded",
-        description: "Voice sample added successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Upload failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const deleteVoiceMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/voices/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/voices"] });
-      toast({
-        title: "Voice deleted",
-        description: "Voice sample removed successfully",
       });
     },
   });
@@ -349,13 +301,14 @@ export function AdvancedTab() {
     }
   }, [inputText, parseTextMutation, parseWithStreaming]);
 
-  const handleUploadVoice = useCallback(async (name: string, file: File) => {
-    await uploadVoiceMutation.mutateAsync({ name, file });
-  }, [uploadVoiceMutation]);
-
-  const handleDeleteVoice = useCallback((id: string) => {
-    deleteVoiceMutation.mutate(id);
-  }, [deleteVoiceMutation]);
+  const handleVoiceUploaded = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/voices"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/custom-voices"] });
+    toast({
+      title: "Voice uploaded",
+      description: "Voice sample added successfully",
+    });
+  }, [queryClient, toast]);
 
   const handleUpdateSpeakerConfig = useCallback((speaker: string, config: Partial<SpeakerConfig>) => {
     setSpeakerConfigs((prev) => ({
@@ -445,45 +398,31 @@ export function AdvancedTab() {
         </div>
 
         <div className="flex flex-col gap-6">
-          <VoiceLibrary
-            voices={libraryVoices}
-            edgeVoices={edgeVoices}
-            selectedId={selectedLibraryVoiceId}
-            onSelect={setSelectedLibraryVoiceId}
-            isLoading={isLibraryLoading}
+          <SettingsPanel
+            exaggeration={exaggeration}
+            pauseDuration={pauseDuration}
             ttsEngine={ttsEngine}
+            registeredEngines={registeredEngines}
+            onExaggerationChange={setExaggeration}
+            onPauseDurationChange={setPauseDuration}
+            onTTSEngineChange={setTTSEngine}
           />
 
-          <VoiceSampleManager
-            samples={voiceSamples}
-            selectedId={selectedVoiceId}
-            onSelect={setSelectedVoiceId}
-            onUpload={handleUploadVoice}
-            onDelete={handleDeleteVoice}
-          />
-
-          {detectedSpeakers.length > 0 && (
+          {segments.length > 0 && (
             <SpeakerAssignment
               speakers={detectedSpeakers}
               voiceSamples={voiceSamples}
               libraryVoices={libraryVoices}
               edgeVoices={edgeVoices}
               ttsEngine={ttsEngine}
+              registeredEngines={registeredEngines}
               speakerConfigs={speakerConfigs}
               narratorVoiceId={narratorVoiceId}
               onUpdateSpeakerConfig={handleUpdateSpeakerConfig}
               onUpdateNarratorVoice={setNarratorVoiceId}
+              onVoiceUploaded={handleVoiceUploaded}
             />
           )}
-
-          <SettingsPanel
-            exaggeration={exaggeration}
-            pauseDuration={pauseDuration}
-            ttsEngine={ttsEngine}
-            onExaggerationChange={setExaggeration}
-            onPauseDurationChange={setPauseDuration}
-            onTTSEngineChange={setTTSEngine}
-          />
         </div>
       </div>
 
