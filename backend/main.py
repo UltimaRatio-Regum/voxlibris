@@ -36,6 +36,77 @@ from remote_tts_client import RemoteTTSClient
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+TARGET_CHUNK_WORDS = 25
+MAX_CHUNK_WORDS = 30
+
+def rechunk_segment(text: str) -> list[str]:
+    """Re-chunk a segment that exceeds the target word count using smart splitting."""
+    words = text.split()
+    if len(words) <= MAX_CHUNK_WORDS:
+        return [text]
+    
+    chunks: list[str] = []
+    remaining = text.strip()
+    
+    while remaining.strip():
+        word_count = len(remaining.split())
+        if word_count <= MAX_CHUNK_WORDS:
+            chunks.append(remaining.strip())
+            break
+        
+        target_char_pos = _words_to_char_pos(remaining, TARGET_CHUNK_WORDS)
+        split_pos = _find_best_split(remaining, target_char_pos)
+        
+        if split_pos <= 0 or split_pos >= len(remaining) - 1:
+            split_pos = target_char_pos
+            space_pos = remaining.rfind(' ', 0, split_pos + 1)
+            if space_pos > 0:
+                split_pos = space_pos
+        
+        chunk = remaining[:split_pos].strip()
+        remaining = remaining[split_pos:].strip()
+        
+        if chunk:
+            chunks.append(chunk)
+    
+    return chunks if chunks else [text]
+
+def _words_to_char_pos(text: str, word_count: int) -> int:
+    words = text.split()
+    if word_count >= len(words):
+        return len(text)
+    current_word = 0
+    for i, char in enumerate(text):
+        if char.isspace() and i > 0 and not text[i-1].isspace():
+            current_word += 1
+            if current_word >= word_count:
+                return i
+    avg_chars = len(text) / max(1, len(words))
+    return int(word_count * avg_chars)
+
+def _find_best_split(text: str, target_pos: int) -> int:
+    search_start = max(0, target_pos - 100)
+    search_end = min(len(text), target_pos + 50)
+    region = text[search_start:search_end]
+    
+    for pattern in [r'[.!?]\s+', r'[:;]\s+', r',\s+']:
+        matches = list(re.finditer(pattern, region))
+        if matches:
+            best = max(matches, key=lambda m: m.end()) if pattern == r'[.!?]\s+' else min(matches, key=lambda m: abs(m.end() - len(region)//2))
+            return search_start + best.end()
+    
+    conjunctions = list(re.finditer(r'\s+(and|but|or|yet|so|for|nor|because|though|while)\s+', region, re.IGNORECASE))
+    if conjunctions:
+        best = min(conjunctions, key=lambda m: abs(m.start() - len(region)//2))
+        return search_start + best.start()
+    
+    spaces = list(re.finditer(r'\s+', region))
+    if spaces:
+        best = min(spaces, key=lambda m: abs(m.start() - len(region)//2))
+        return search_start + best.start()
+    
+    return target_pos
+
 app = FastAPI(title="Narrator AI API", version="1.0.0")
 
 app.add_middleware(
@@ -764,22 +835,36 @@ async def parse_text_llm_stream(request: ParseTextLLMRequest):
         if known_speakers:
             speaker_hint = f"\nKnown speakers from previous sections: {', '.join(known_speakers)}. Use these names when you recognize the same characters.\n"
         
-        prompt = f"""Segment and chunk this text for text-to-speech. Each chunk should be 8-12 seconds of speech (~20-30 words).
+        prompt = f"""You are chunking text for a text-to-speech audiobook engine. Each chunk will be sent to a TTS engine as a separate audio clip, so chunk size directly controls audio segment length.
 
-RULES:
-1. Always split at quote boundaries — quoted dialogue and surrounding narration must be separate chunks.
-2. Each chunk must be either "narration" or "dialogue", never mixed.
-3. Keep chunks at ~20-30 words (8-12 seconds). Split long sentences at natural pauses (commas, semicolons, conjunctions) if needed.
-4. For dialogue chunks, identify the speaker by name from context.
-5. Assign one emotion to each chunk from this list: {CANONICAL_EMOTIONS}
-6. Preserve the original text exactly — do not paraphrase or summarize.
+TARGET: Each chunk must be 20-30 words (8-12 seconds of speech at 2.5 words/second). This is critical — TTS engines produce poor quality on long inputs.
+
+CHUNKING RULES (in priority order):
+1. QUOTE BOUNDARIES: Quoted dialogue must always be its own chunk, separate from surrounding narration. Never mix dialogue and narration in one chunk.
+2. SIZE LIMIT: No chunk may exceed 30 words. If a sentence or paragraph is longer than 30 words, you MUST split it at a natural pause point:
+   - First preference: sentence boundaries (periods, question marks, exclamation marks)
+   - Second preference: semicolons, colons, or em-dashes
+   - Third preference: commas or conjunctions (and, but, or, so, yet, because, though, while)
+3. MINIMUM SIZE: Avoid chunks under 10 words unless they are short dialogue (e.g. "Yes," he said).
+4. TYPE: Each chunk is either "narration" or "dialogue", never both.
+5. SPEAKER: For dialogue, identify the speaker by name from context. For narration, speaker is null.
+6. EMOTION: Assign exactly one emotion per chunk from: {CANONICAL_EMOTIONS}
+7. PRESERVE TEXT: Copy the original text exactly — do not paraphrase, summarize, or omit any words.
+
+EXAMPLE — given this input:
+"She walked through the crowded marketplace, scanning the stalls for anything useful. The smell of fresh bread drifted from a nearby bakery, mixing with the sharp tang of fish from the harbor. \\"Looking for something specific?\\" the old merchant asked, leaning forward with a knowing smile."
+
+Correct output (3 chunks, not 1):
+- "She walked through the crowded marketplace, scanning the stalls for anything useful." (13 words, narration)
+- "The smell of fresh bread drifted from a nearby bakery, mixing with the sharp tang of fish from the harbor." (20 words, narration)
+- "Looking for something specific?" (4 words, dialogue, speaker: merchant)
 {speaker_hint}
 Previous context: {context[:500] if context else 'Start of text'}
 
 TEXT TO ANALYZE:
 {chunk}
 
-Return ONLY a JSON object with this structure:
+Return ONLY a JSON object:
 {{
   "segments": [
     {{
@@ -792,7 +877,7 @@ Return ONLY a JSON object with this structure:
   "detectedSpeakers": ["list", "of", "speaker", "names"]
 }}
 
-Return ONLY valid JSON."""
+Return ONLY valid JSON, no markdown fences."""
 
         try:
             response = await client.post(
@@ -931,20 +1016,34 @@ async def parse_text_llm(request: ParseTextLLMRequest):
     if request.knownSpeakers:
         speaker_hint = f"\nKnown speakers: {', '.join(request.knownSpeakers)}. Use these names when you recognize the same characters.\n"
     
-    prompt = f"""Segment and chunk this text for text-to-speech. Each chunk should be 8-12 seconds of speech (~20-30 words).
+    prompt = f"""You are chunking text for a text-to-speech audiobook engine. Each chunk will be sent to a TTS engine as a separate audio clip, so chunk size directly controls audio segment length.
 
-RULES:
-1. Always split at quote boundaries — quoted dialogue and surrounding narration must be separate chunks.
-2. Each chunk must be either "narration" or "dialogue", never mixed.
-3. Keep chunks at ~20-30 words (8-12 seconds). Split long sentences at natural pauses (commas, semicolons, conjunctions) if needed.
-4. For dialogue chunks, identify the speaker by name from context.
-5. Assign one emotion to each chunk from this list: {CANONICAL_EMOTIONS}
-6. Preserve the original text exactly — do not paraphrase or summarize.
+TARGET: Each chunk must be 20-30 words (8-12 seconds of speech at 2.5 words/second). This is critical — TTS engines produce poor quality on long inputs.
+
+CHUNKING RULES (in priority order):
+1. QUOTE BOUNDARIES: Quoted dialogue must always be its own chunk, separate from surrounding narration. Never mix dialogue and narration in one chunk.
+2. SIZE LIMIT: No chunk may exceed 30 words. If a sentence or paragraph is longer than 30 words, you MUST split it at a natural pause point:
+   - First preference: sentence boundaries (periods, question marks, exclamation marks)
+   - Second preference: semicolons, colons, or em-dashes
+   - Third preference: commas or conjunctions (and, but, or, so, yet, because, though, while)
+3. MINIMUM SIZE: Avoid chunks under 10 words unless they are short dialogue (e.g. "Yes," he said).
+4. TYPE: Each chunk is either "narration" or "dialogue", never both.
+5. SPEAKER: For dialogue, identify the speaker by name from context. For narration, speaker is null.
+6. EMOTION: Assign exactly one emotion per chunk from: {CANONICAL_EMOTIONS}
+7. PRESERVE TEXT: Copy the original text exactly — do not paraphrase, summarize, or omit any words.
+
+EXAMPLE — given this input:
+"She walked through the crowded marketplace, scanning the stalls for anything useful. The smell of fresh bread drifted from a nearby bakery, mixing with the sharp tang of fish from the harbor. \\"Looking for something specific?\\" the old merchant asked, leaning forward with a knowing smile."
+
+Correct output (3 chunks, not 1):
+- "She walked through the crowded marketplace, scanning the stalls for anything useful." (13 words, narration)
+- "The smell of fresh bread drifted from a nearby bakery, mixing with the sharp tang of fish from the harbor." (20 words, narration)
+- "Looking for something specific?" (4 words, dialogue, speaker: merchant)
 {speaker_hint}
-TEXT:
+TEXT TO ANALYZE:
 {request.text[:8000]}
 
-Return ONLY a JSON object with this structure:
+Return ONLY a JSON object:
 {{
   "segments": [
     {{"type": "narration" or "dialogue", "text": "exact text from the passage", "speaker": "name or null", "emotion": "one emotion from the list above"}}
@@ -952,7 +1051,7 @@ Return ONLY a JSON object with this structure:
   "detectedSpeakers": ["list", "of", "names"]
 }}
 
-Return ONLY valid JSON."""
+Return ONLY valid JSON, no markdown fences."""
 
     try:
         async with httpx.AsyncClient() as client:
@@ -990,23 +1089,26 @@ Return ONLY valid JSON."""
             segments = []
             for seg in result.get("segments", []):
                 seg_text = seg.get("text", "")
-                wc = len(seg_text.split())
                 emotion = seg.get("emotion", seg.get("sentiment", "neutral"))
                 if emotion not in CANONICAL_EMOTIONS:
                     emotion = "neutral"
-                segments.append({
-                    "id": str(uuid.uuid4()),
-                    "type": seg.get("type", "narration"),
-                    "text": seg_text,
-                    "speaker": seg.get("speaker"),
-                    "speakerCandidates": {seg.get("speaker"): 0.9} if seg.get("speaker") else None,
-                    "needsReview": False,
-                    "sentiment": {"label": emotion, "score": 0.8},
-                    "startIndex": 0,
-                    "endIndex": len(seg_text),
-                    "wordCount": wc,
-                    "approxDurationSeconds": round(wc / 2.5, 1),
-                })
+                
+                sub_texts = rechunk_segment(seg_text)
+                for st in sub_texts:
+                    wc = len(st.split())
+                    segments.append({
+                        "id": str(uuid.uuid4()),
+                        "type": seg.get("type", "narration"),
+                        "text": st,
+                        "speaker": seg.get("speaker"),
+                        "speakerCandidates": {seg.get("speaker"): 0.9} if seg.get("speaker") else None,
+                        "needsReview": False,
+                        "sentiment": {"label": emotion, "score": 0.8},
+                        "startIndex": 0,
+                        "endIndex": len(st),
+                        "wordCount": wc,
+                        "approxDurationSeconds": round(wc / 2.5, 1),
+                    })
             
             return {
                 "segments": segments,

@@ -12,11 +12,10 @@ const openrouter = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
 });
 
-// Default to ChatGPT
 export const DEFAULT_MODEL = "openai/gpt-5.4";
 
 export interface SpeakerCandidates {
-  [speaker: string]: number; // name -> confidence 0-1
+  [speaker: string]: number;
 }
 
 export interface LLMSegment {
@@ -27,7 +26,7 @@ export interface LLMSegment {
     label: string;
     score: number;
   };
-  sentiment?: {  // Legacy fallback
+  sentiment?: {
     label: string;
     score: number;
   };
@@ -60,22 +59,18 @@ export interface ParsedTextResult {
   detectedSpeakers: string[];
 }
 
-// Check if speaker confidence has low variance (needs manual review)
 function needsReview(candidates: SpeakerCandidates | undefined): boolean {
   if (!candidates) return false;
   const scores = Object.values(candidates);
   if (scores.length < 2) return false;
   
-  // Sort descending
   scores.sort((a, b) => b - a);
   const topScore = scores[0];
   const secondScore = scores[1];
   
-  // If difference between top two is less than 0.3, needs review
   return (topScore - secondScore) < 0.3;
 }
 
-// Get the most likely speaker from candidates
 function getMostLikelySpeaker(candidates: SpeakerCandidates | undefined): string | null {
   if (!candidates) return null;
   const entries = Object.entries(candidates);
@@ -85,7 +80,131 @@ function getMostLikelySpeaker(candidates: SpeakerCandidates | undefined): string
   return entries[0][0];
 }
 
-// Convert LLM result to our segment format
+const TARGET_CHUNK_WORDS = 25;
+const MAX_CHUNK_WORDS = 30;
+
+function rechunkSegmentText(text: string): string[] {
+  const words = text.split(/\s+/).filter(w => w.length > 0);
+  if (words.length <= MAX_CHUNK_WORDS) {
+    return [text];
+  }
+  
+  const chunks: string[] = [];
+  let remaining = text.trim();
+  
+  while (remaining.trim()) {
+    const wordCount = remaining.split(/\s+/).filter(w => w.length > 0).length;
+    if (wordCount <= MAX_CHUNK_WORDS) {
+      chunks.push(remaining.trim());
+      break;
+    }
+    
+    const targetCharPos = wordsToCharPos(remaining, TARGET_CHUNK_WORDS);
+    let splitPos = findBestSplit(remaining, targetCharPos);
+    
+    if (splitPos <= 0 || splitPos >= remaining.length - 1) {
+      splitPos = targetCharPos;
+      const spacePos = remaining.lastIndexOf(' ', splitPos);
+      if (spacePos > 0) {
+        splitPos = spacePos;
+      }
+    }
+    
+    const chunk = remaining.substring(0, splitPos).trim();
+    remaining = remaining.substring(splitPos).trim();
+    
+    if (chunk) {
+      chunks.push(chunk);
+    }
+  }
+  
+  return chunks.length > 0 ? chunks : [text];
+}
+
+function wordsToCharPos(text: string, wordCount: number): number {
+  const words = text.split(/\s+/).filter(w => w.length > 0);
+  if (wordCount >= words.length) return text.length;
+  
+  let currentWord = 0;
+  let inWord = false;
+  for (let i = 0; i < text.length; i++) {
+    const isSpace = /\s/.test(text[i]);
+    if (isSpace && inWord) {
+      currentWord++;
+      inWord = false;
+      if (currentWord >= wordCount) return i;
+    } else if (!isSpace) {
+      inWord = true;
+    }
+  }
+  
+  const avgChars = text.length / Math.max(1, words.length);
+  return Math.floor(wordCount * avgChars);
+}
+
+function findBestSplit(text: string, targetPos: number): number {
+  const searchStart = Math.max(0, targetPos - 100);
+  const searchEnd = Math.min(text.length, targetPos + 50);
+  const region = text.substring(searchStart, searchEnd);
+  
+  const patterns: [RegExp, 'last' | 'mid'][] = [
+    [/[.!?]\s+/g, 'last'],
+    [/[:;]\s+/g, 'mid'],
+    [/,\s+/g, 'mid'],
+  ];
+  
+  for (const [pattern, strategy] of patterns) {
+    const matches: RegExpExecArray[] = [];
+    let m;
+    while ((m = pattern.exec(region)) !== null) {
+      matches.push(m);
+    }
+    if (matches.length > 0) {
+      const best = strategy === 'last'
+        ? matches[matches.length - 1]
+        : matches.reduce((a, b) => 
+            Math.abs(a.index + a[0].length - region.length / 2) < Math.abs(b.index + b[0].length - region.length / 2) ? a : b
+          );
+      return searchStart + best.index + best[0].length;
+    }
+  }
+  
+  const conjPattern = /\s+(and|but|or|yet|so|for|nor|because|though|while)\s+/gi;
+  const conjMatches: RegExpExecArray[] = [];
+  let cm;
+  while ((cm = conjPattern.exec(region)) !== null) {
+    conjMatches.push(cm);
+  }
+  if (conjMatches.length > 0) {
+    const best = conjMatches.reduce((a, b) =>
+      Math.abs(a.index - region.length / 2) < Math.abs(b.index - region.length / 2) ? a : b
+    );
+    return searchStart + best.index;
+  }
+  
+  const spacePattern = /\s+/g;
+  const spaceMatches: RegExpExecArray[] = [];
+  let sm;
+  while ((sm = spacePattern.exec(region)) !== null) {
+    spaceMatches.push(sm);
+  }
+  if (spaceMatches.length > 0) {
+    const best = spaceMatches.reduce((a, b) =>
+      Math.abs(a.index - region.length / 2) < Math.abs(b.index - region.length / 2) ? a : b
+    );
+    return searchStart + best.index;
+  }
+  
+  return targetPos;
+}
+
+function normalizeEmotion(emotion: { label: string; score: number } | null | undefined): { label: string; score: number } | null {
+  if (!emotion) return null;
+  const validSet = new Set<string>(VALID_EMOTIONS);
+  if (validSet.has(emotion.label)) return emotion;
+  return { label: "neutral", score: emotion.score };
+}
+
 function convertLLMResult(result: LLMParseResult): ParsedTextResult {
   const segments: SpeakerSegment[] = [];
   
@@ -93,17 +212,21 @@ function convertLLMResult(result: LLMParseResult): ParsedTextResult {
     for (const seg of chunk.segments) {
       const isSpoken = seg.type === "spoken";
       const candidates = isSpoken ? seg.speaker_candidates : null;
+      const emotion = normalizeEmotion(seg.emotion ?? seg.sentiment ?? null);
       
-      segments.push({
-        text: seg.text,
-        type: isSpoken ? "dialogue" : "narration",
-        speaker: isSpoken ? getMostLikelySpeaker(candidates ?? undefined) : null,
-        speakerCandidates: candidates ?? null,
-        needsReview: needsReview(candidates ?? undefined),
-        sentiment: seg.emotion ?? seg.sentiment ?? null,
-        chunkId: chunk.chunk_id,
-        approxDurationSeconds: chunk.approx_duration_seconds,
-      });
+      const subTexts = rechunkSegmentText(seg.text);
+      for (const st of subTexts) {
+        segments.push({
+          text: st,
+          type: isSpoken ? "dialogue" : "narration",
+          speaker: isSpoken ? getMostLikelySpeaker(candidates ?? undefined) : null,
+          speakerCandidates: candidates ?? null,
+          needsReview: needsReview(candidates ?? undefined),
+          sentiment: emotion,
+          chunkId: chunk.chunk_id,
+          approxDurationSeconds: Math.round(st.split(/\s+/).filter(w => w.length > 0).length / 2.5 * 10) / 10,
+        });
+      }
     }
   }
   
@@ -113,10 +236,7 @@ function convertLLMResult(result: LLMParseResult): ParsedTextResult {
   };
 }
 
-// Split text into ~2-3 paragraph batches for better progress tracking
-// Avoids splitting mid-dialogue by looking for safe break points
 function splitIntoParagraphBatches(text: string, paragraphsPerBatch: number = 3): string[] {
-  // Split by double newlines (paragraphs)
   const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0);
   
   if (paragraphs.length === 0) {
@@ -125,37 +245,29 @@ function splitIntoParagraphBatches(text: string, paragraphsPerBatch: number = 3)
   
   const batches: string[] = [];
   let currentBatch: string[] = [];
-  let straightQuoteCount = 0;  // Straight quotes toggle (odd = open, even = closed)
-  let curlyQuoteBalance = 0;   // Curly quotes have distinct open/close
+  let straightQuoteCount = 0;
+  let curlyQuoteBalance = 0;
   
   for (let i = 0; i < paragraphs.length; i++) {
     const para = paragraphs[i];
     currentBatch.push(para);
     
-    // Count straight quotes (these toggle between open/close)
     const straightQuotes = (para.match(/"/g) || []).length;
     straightQuoteCount += straightQuotes;
     
-    // Count curly quotes (distinct open/close)
     const curlyOpen = (para.match(/[\u201c]/g) || []).length;
     const curlyClose = (para.match(/[\u201d]/g) || []).length;
     curlyQuoteBalance += curlyOpen - curlyClose;
     
-    // Check if we should finalize this batch
     const atBatchLimit = currentBatch.length >= paragraphsPerBatch;
     const isLastParagraph = i === paragraphs.length - 1;
     
-    // Quotes are balanced if:
-    // - Straight quote count is even (pairs closed)
-    // - Curly quote balance is 0 or negative
     const straightQuotesBalanced = (straightQuoteCount % 2) === 0;
     const curlyQuotesBalanced = curlyQuoteBalance <= 0;
     const quotesBalanced = straightQuotesBalanced && curlyQuotesBalanced;
     
-    // Prevent runaway batches: cap at 2x the target size
     const batchTooLarge = currentBatch.length >= paragraphsPerBatch * 2;
     
-    // Only split if quotes are balanced (not mid-dialogue) or at end or batch too large
     if ((atBatchLimit && quotesBalanced) || isLastParagraph || batchTooLarge) {
       batches.push(currentBatch.join("\n\n"));
       currentBatch = [];
@@ -164,7 +276,6 @@ function splitIntoParagraphBatches(text: string, paragraphsPerBatch: number = 3)
     }
   }
   
-  // Handle any remaining paragraphs
   if (currentBatch.length > 0) {
     batches.push(currentBatch.join("\n\n"));
   }
@@ -172,52 +283,54 @@ function splitIntoParagraphBatches(text: string, paragraphsPerBatch: number = 3)
   return batches.length > 0 ? batches : [text];
 }
 
-// Fixed set of emotions for consistent prosody adjustments
-// Each emotion maps to specific pitch (+/-1%) and speed (+/-1%) adjustments
 const VALID_EMOTIONS = [
-  "neutral",    // No adjustment
-  "happy",      // +1% pitch, +1% speed
-  "sad",        // -1% pitch, -1% speed
-  "angry",      // +1% pitch, +1% speed
-  "fearful",    // +1% pitch, +1% speed
-  "surprised",  // +1% pitch, +1% speed
-  "disgusted",  // -1% pitch, -1% speed
-  "excited",    // +1% pitch, +1% speed
-  "calm",       // 0% pitch, -1% speed
-  "anxious",    // +0.5% pitch, +1% speed
-  "hopeful",    // +0.5% pitch, 0% speed
-  "melancholy", // -0.5% pitch, -1% speed
+  "neutral", "happy", "sad", "angry", "fear", "disgust", "surprise",
+  "excited", "calm", "anxious", "hopeful", "melancholy", "tender", "proud",
 ] as const;
 
-const SYSTEM_PROMPT = `You are an expert text analyzer for audiobook production. Your task is to parse narrative text into structured chunks suitable for audio generation.
+const SYSTEM_PROMPT = `You are chunking text for a text-to-speech audiobook engine. Each segment will be sent to a TTS engine as a separate audio clip, so segment size directly controls audio quality.
 
-Rules for chunking and segmentation:
-1. Split text at natural stopping points into chunks of approximately 30 seconds of audio (roughly 75-100 words per chunk)
-2. Each chunk should contain segments that are EITHER all narration OR a single speaker's dialogue
-3. ALWAYS split at transitions between speaking and narrating
-4. Text within quotation marks (straight " or curly "") is spoken dialogue
-5. Text outside quotes is narration
+TARGET: Each segment must be 20-30 words (8-12 seconds of speech at 2.5 words/second). This is critical — TTS engines produce poor quality on long inputs.
 
-For each segment:
-- Identify the speaker from context clues (dialogue tags like "said John", or contextual inference) for spoken segments
+SEGMENTATION RULES (in priority order):
+1. QUOTE BOUNDARIES: Quoted dialogue (straight " or curly \u201c\u201d) must always be its own segment, separate from surrounding narration. Never mix dialogue and narration in one segment.
+2. SIZE LIMIT: No segment may exceed 30 words. If a sentence or paragraph is longer than 30 words, you MUST split it at a natural pause point:
+   - First preference: sentence boundaries (periods, question marks, exclamation marks)
+   - Second preference: semicolons, colons, or em-dashes
+   - Third preference: commas or conjunctions (and, but, or, so, yet, because, though, while)
+3. MINIMUM SIZE: Avoid segments under 10 words unless they are short dialogue (e.g. "Yes," he said).
+4. TRANSITIONS: ALWAYS split at transitions between speaking and narrating.
+5. TYPE: Each segment is either "spoken" (dialogue in quotes) or "narration" (everything else).
+
+SPEAKER IDENTIFICATION:
+- For spoken segments, identify the speaker from context clues (dialogue tags like "said John", or contextual inference)
 - Provide confidence scores for each possible speaker (values 0-1, must sum to 1)
-- Assign an emotion from this FIXED list ONLY: ${VALID_EMOTIONS.join(", ")}
 
-EMOTION REFERENCE TABLE:
+EMOTION: Assign exactly one emotion per segment from this FIXED list ONLY: ${VALID_EMOTIONS.join(", ")}
+
 | Emotion    | Use When                                           |
 |------------|---------------------------------------------------|
 | neutral    | Default, factual narration, no strong emotion     |
 | happy      | Joy, pleasure, satisfaction, positive outcomes    |
 | sad        | Sorrow, disappointment, loss, grief               |
 | angry      | Frustration, rage, annoyance, confrontation       |
-| fearful    | Fear, worry, dread, danger, threat                |
-| surprised  | Shock, astonishment, unexpected events            |
-| disgusted  | Revulsion, disapproval, distaste                  |
+| fear       | Fear, worry, dread, danger, threat                |
+| disgust    | Revulsion, disapproval, distaste                  |
+| surprise   | Shock, astonishment, unexpected events            |
 | excited    | Enthusiasm, anticipation, energy, thrill          |
 | calm       | Peaceful, serene, relaxed, reassuring             |
 | anxious    | Nervousness, unease, tension, apprehension        |
 | hopeful    | Optimism, anticipation of good, looking forward   |
 | melancholy | Wistful sadness, nostalgia, bittersweet feelings  |
+| tender     | Gentle affection, warmth, intimacy, caring        |
+| proud      | Achievement, dignity, self-assurance, satisfaction|
+
+EXAMPLE — given: "She walked through the crowded marketplace, scanning the stalls for anything useful. The smell of fresh bread drifted from a nearby bakery, mixing with the sharp tang of fish from the harbor. \\"Looking for something specific?\\" the old merchant asked, leaning forward."
+
+Correct output — 3 segments in 1 chunk, NOT 1 large segment:
+- Segment 1 (narration, 13w): "She walked through the crowded marketplace, scanning the stalls for anything useful."
+- Segment 2 (narration, 20w): "The smell of fresh bread drifted from a nearby bakery, mixing with the sharp tang of fish from the harbor."
+- Segment 3 (spoken, 8w): "\\"Looking for something specific?\\" the old merchant asked, leaning forward."
 
 Return JSON in this exact format:
 {
@@ -225,7 +338,7 @@ Return JSON in this exact format:
   "chunks": [
     {
       "chunk_id": 1,
-      "approx_duration_seconds": 30,
+      "approx_duration_seconds": 10,
       "segments": [
         {
           "type": "spoken",
@@ -234,8 +347,8 @@ Return JSON in this exact format:
           "emotion": {"label": "happy", "score": 0.8}
         },
         {
-          "type": "narration", 
-          "text": "The narration text",
+          "type": "narration",
+          "text": "The narration text (max 30 words)",
           "emotion": {"label": "neutral", "score": 0.7}
         }
       ]
@@ -244,13 +357,12 @@ Return JSON in this exact format:
 }
 
 Important:
-- Preserve the EXACT text including quotation marks
+- Preserve the EXACT text including quotation marks — do not paraphrase, summarize, or omit words
 - Include ALL text with no gaps
 - Chunk IDs should be sequential starting from the provided starting ID
 - Use context from previous exchanges to identify speakers consistently
-- ONLY use emotions from the fixed list above - do not invent new emotion labels`;
+- ONLY use emotions from the fixed list above — do not invent new emotion labels`;
 
-// Parse text using conversational approach (maintaining context across batches)
 async function parseWithConversation(
   text: string,
   model: string,
@@ -261,7 +373,6 @@ async function parseWithConversation(
     { role: "system", content: SYSTEM_PROMPT }
   ];
   
-  // Add known speakers hint if provided
   if (knownSpeakers.length > 0) {
     messages.push({
       role: "user",
@@ -280,11 +391,10 @@ async function parseWithConversation(
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
     const isFirst = i === 0;
-    const isLast = i === batches.length - 1;
     
     const userPrompt = isFirst
-      ? `Parse the following text into chunks and segments. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
-      : `Continue parsing the next section. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
+      ? `Parse the following text into chunks and segments. Each segment MUST be 20-30 words max. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
+      : `Continue parsing the next section. Each segment MUST be 20-30 words max. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
     
     messages.push({ role: "user", content: userPrompt });
     
@@ -301,18 +411,14 @@ async function parseWithConversation(
       throw new Error(`No response from LLM for batch ${i + 1}`);
     }
     
-    // Add assistant response to conversation history
     messages.push({ role: "assistant", content });
     
-    // Parse the response
     const parsed = JSON.parse(content) as LLMParseResult;
     
-    // Collect characters
     if (parsed.characters) {
       parsed.characters.forEach(c => allCharacters.add(c));
     }
     
-    // Collect chunks and update next chunk ID
     if (parsed.chunks && Array.isArray(parsed.chunks)) {
       for (const chunk of parsed.chunks) {
         allChunks.push(chunk);
@@ -342,7 +448,6 @@ export async function parseTextWithLLM(
   return convertLLMResult(result);
 }
 
-// Streaming version that yields results batch by batch
 export interface StreamingParseUpdate {
   type: 'progress' | 'chunk' | 'complete' | 'error';
   chunkIndex?: number;
@@ -365,14 +470,12 @@ export async function* parseTextWithLLMStreaming(
   const batches = splitIntoParagraphBatches(text, 3);
   const totalBatches = batches.length;
   
-  // Initial progress update
   yield { type: 'progress', chunkIndex: 0, totalChunks: totalBatches };
   
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT }
   ];
   
-  // Add known speakers hint if provided
   if (knownSpeakers.length > 0) {
     messages.push({
       role: "user",
@@ -392,8 +495,8 @@ export async function* parseTextWithLLMStreaming(
     const isFirst = i === 0;
     
     const userPrompt = isFirst
-      ? `Parse the following text into chunks and segments. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
-      : `Continue parsing the next section. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
+      ? `Parse the following text into chunks and segments. Each segment MUST be 20-30 words max. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
+      : `Continue parsing the next section. Each segment MUST be 20-30 words max. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
     
     messages.push({ role: "user", content: userPrompt });
     
@@ -411,18 +514,14 @@ export async function* parseTextWithLLMStreaming(
         throw new Error(`No response from LLM for batch ${i + 1}`);
       }
       
-      // Add assistant response to conversation history for context
       messages.push({ role: "assistant", content });
       
-      // Parse the response
       const parsed = JSON.parse(content) as LLMParseResult;
       
-      // Collect characters
       if (parsed.characters) {
         parsed.characters.forEach(c => allCharacters.add(c));
       }
       
-      // Convert to our segment format
       const batchSegments: SpeakerSegment[] = [];
       if (parsed.chunks && Array.isArray(parsed.chunks)) {
         for (const chunk of parsed.chunks) {
@@ -433,22 +532,25 @@ export async function* parseTextWithLLMStreaming(
           for (const seg of chunk.segments) {
             const isSpoken = seg.type === "spoken";
             const candidates = isSpoken ? seg.speaker_candidates : null;
+            const emotion = normalizeEmotion(seg.emotion ?? seg.sentiment ?? null);
             
-            batchSegments.push({
-              text: seg.text,
-              type: isSpoken ? "dialogue" : "narration",
-              speaker: isSpoken ? getMostLikelySpeaker(candidates ?? undefined) : null,
-              speakerCandidates: candidates ?? null,
-              needsReview: needsReview(candidates ?? undefined),
-              sentiment: seg.emotion ?? seg.sentiment ?? null,
-              chunkId: chunk.chunk_id,
-              approxDurationSeconds: chunk.approx_duration_seconds,
-            });
+            const subTexts = rechunkSegmentText(seg.text);
+            for (const st of subTexts) {
+              batchSegments.push({
+                text: st,
+                type: isSpoken ? "dialogue" : "narration",
+                speaker: isSpoken ? getMostLikelySpeaker(candidates ?? undefined) : null,
+                speakerCandidates: candidates ?? null,
+                needsReview: needsReview(candidates ?? undefined),
+                sentiment: emotion,
+                chunkId: chunk.chunk_id,
+                approxDurationSeconds: Math.round(st.split(/\s+/).filter(w => w.length > 0).length / 2.5 * 10) / 10,
+              });
+            }
           }
         }
       }
       
-      // Yield this batch's results
       yield {
         type: 'chunk',
         chunkIndex: i + 1,
@@ -468,7 +570,6 @@ export async function* parseTextWithLLMStreaming(
     }
   }
   
-  // Final completion update
   yield { 
     type: 'complete',
     chunkIndex: totalBatches,
