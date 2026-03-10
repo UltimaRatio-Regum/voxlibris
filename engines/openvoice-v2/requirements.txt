@@ -1,10 +1,8 @@
 torch>=2.0.0
 torchaudio>=2.0.0
-myshell-openvoice @ git+https://github.com/myshell-ai/OpenVoice.git
-MeloTTS @ git+https://github.com/myshell-ai/MeloTTS.git
+numpy<2.0.0
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
-numpy>=1.24.0
 pydantic>=2.0.0
 pyrubberband>=0.3.0
 soundfile>=0.12.0
