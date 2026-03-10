@@ -41,4 +41,4 @@ ENV OMP_NUM_THREADS=4
 
 EXPOSE 7860
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "OMP_NUM_THREADS=4 uvicorn app:app --host 0.0.0.0 --port 7860"]
