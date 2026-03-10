@@ -13,7 +13,7 @@ const openrouter = new OpenAI({
 });
 
 // Default to ChatGPT
-export const DEFAULT_MODEL = "openai/chatgpt-4o-latest";
+export const DEFAULT_MODEL = "openai/gpt-5.4";
 
 export interface SpeakerCandidates {
   [speaker: string]: number; // name -> confidence 0-1
@@ -479,9 +479,11 @@ export async function* parseTextWithLLMStreaming(
 
 export async function getAvailableModels(): Promise<string[]> {
   return [
-    "openai/chatgpt-4o-latest",
-    "openai/gpt-4o",
-    "openai/gpt-4o-mini", 
+    "openai/gpt-5.4",
+    "openai/gpt-5.3",
+    "openai/gpt-4.1",
+    "openai/gpt-4.1-mini",
+    "openai/gpt-4.1-nano",
     "meta-llama/llama-3.3-70b-instruct",
     "meta-llama/llama-3.1-8b-instruct",
     "mistralai/mistral-7b-instruct",
