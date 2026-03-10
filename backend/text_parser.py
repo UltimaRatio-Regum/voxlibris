@@ -1,6 +1,6 @@
 """
 Text Parser - Separates dialogue from narration and identifies speakers
-with ~30 second chunking
+with ~10 second chunking
 """
 
 import re
@@ -15,7 +15,7 @@ class TextParser:
     """
     Parses text to separate quoted/spoken sections from narration,
     identifies speakers, and performs sentiment analysis.
-    Chunks text into ~30 second intervals for TTS processing.
+    Chunks text into ~10 second intervals for TTS processing.
     """
     
     DIALOGUE_VERBS = [
@@ -30,7 +30,7 @@ class TextParser:
     ]
     
     WORDS_PER_SECOND = 2.5
-    TARGET_CHUNK_SECONDS = 30.0
+    TARGET_CHUNK_SECONDS = 10.0
     
     def parse(self, text: str) -> tuple[list[TextSegment], list[str]]:
         """
@@ -207,7 +207,7 @@ class TextParser:
     
     def _chunk_all_segments(self, segments: list[TextSegment]) -> list[TextSegment]:
         """
-        Chunk all segments into approximately 30-second intervals.
+        Chunk all segments into approximately 10-second intervals.
         """
         target_words = int(self.TARGET_CHUNK_SECONDS * self.WORDS_PER_SECOND)
         chunked: list[TextSegment] = []
