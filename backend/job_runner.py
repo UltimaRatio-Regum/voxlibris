@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from pydub import AudioSegment
 
-from database import JobStatus, SegmentStatus, get_db_session, TTSJob, TTSSegment, CustomVoice, TTSEngineEndpoint, VoiceLibraryEntry
+from database import JobStatus, SegmentStatus, get_db_session, TTSJob, TTSSegment, CustomVoice, TTSEngineEndpoint, VoiceLibraryEntry, ProjectAudioFile
 from job_manager import (
     update_job_status, update_segment_status, 
     TTS_OUTPUT_DIR, active_jobs
@@ -144,6 +144,8 @@ async def process_job(job_id: str):
         else:
             update_job_status(job_id, JobStatus.COMPLETED, error_message="Some segments failed")
             logger.warning(f"Job {job_id} completed with some failures")
+        
+        _persist_project_audio(job_id, config, tts_engine, narrator_voice_id)
     finally:
         for tmp_path in temp_files:
             try:
@@ -153,6 +155,73 @@ async def process_job(job_id: str):
         
         if job_id in active_jobs:
             del active_jobs[job_id]
+
+
+def _persist_project_audio(job_id: str, config: Dict[str, Any], tts_engine: str, narrator_voice_id: str):
+    """After a job completes, persist completed segment audio to ProjectAudioFile if this was a project job."""
+    project_id = config.get("projectId")
+    if not project_id:
+        return
+    
+    scope_type = config.get("scopeType", "chunk")
+    scope_id = config.get("scopeId", "")
+    
+    try:
+        import uuid
+        from datetime import datetime
+        
+        db = get_db_session()
+        try:
+            segments = db.query(TTSSegment).filter(
+                TTSSegment.job_id == job_id,
+                TTSSegment.status == SegmentStatus.COMPLETED.value,
+            ).order_by(TTSSegment.segment_index).all()
+            
+            if not segments:
+                logger.warning(f"No completed segments for project audio persistence (job {job_id})")
+                return
+            
+            chunk_ids = config.get("chunkIds", [])
+            
+            for seg in segments:
+                if not seg.audio_data:
+                    continue
+                
+                if seg.segment_index < len(chunk_ids):
+                    chunk_scope_id = chunk_ids[seg.segment_index]
+                else:
+                    chunk_scope_id = seg.id
+                
+                af = ProjectAudioFile(
+                    id=str(uuid.uuid4()),
+                    project_id=project_id,
+                    scope_type="chunk",
+                    scope_id=chunk_scope_id,
+                    audio_data=seg.audio_data,
+                    format="mp3",
+                    duration_seconds=seg.duration_seconds,
+                    tts_engine=tts_engine,
+                    voice_id=narrator_voice_id,
+                    settings_json=json.dumps({
+                        "ttsEngine": tts_engine,
+                        "narratorVoiceId": narrator_voice_id,
+                        "exaggeration": config.get("defaultExaggeration", 0.5),
+                        "speaker": seg.speaker,
+                        "sentiment": seg.sentiment,
+                    }),
+                    created_at=datetime.utcnow(),
+                )
+                db.add(af)
+            
+            db.commit()
+            logger.info(f"Persisted {len(segments)} audio files for project {project_id}")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to persist project audio: {e}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error in _persist_project_audio: {e}")
 
 
 async def generate_segment_audio(

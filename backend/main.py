@@ -2247,6 +2247,8 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
         from job_manager import create_job
         from job_runner import start_job_async
 
+        chunk_ids_ordered = [seg["id"] for seg in segments_for_job]
+
         job_title = f"{project.title} - {request.scopeType}: {request.scopeId[:8]}"
         job_id = create_job(
             title=job_title,
@@ -2260,6 +2262,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                 "projectId": project_id,
                 "scopeType": request.scopeType,
                 "scopeId": request.scopeId,
+                "chunkIds": chunk_ids_ordered,
             }
         )
 

@@ -68,8 +68,20 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
   ];
 
   const audioFiles = (project.audioFiles || []).filter((af) => {
-    if (selection.type === "project") return af.scopeType === "project";
-    return af.scopeType === selection.type && af.scopeId === selection.id;
+    if (af.scopeType === selection.type && af.scopeId === selection.id) return true;
+    if (selection.type === "project") return true;
+    if (selection.type === "chunk" && af.scopeType === "chunk" && af.scopeId === selection.id) return true;
+    if (selection.type === "section") {
+      const section = selection.data as ProjectSection;
+      const chunkIds = (section.chunks || []).map(c => c.id);
+      return af.scopeType === "chunk" && chunkIds.includes(af.scopeId);
+    }
+    if (selection.type === "chapter") {
+      const chapter = selection.data as ProjectChapter;
+      const chunkIds = (chapter.sections || []).flatMap(s => (s.chunks || []).map(c => c.id));
+      return af.scopeType === "chunk" && chunkIds.includes(af.scopeId);
+    }
+    return false;
   });
 
   const generateMutation = useMutation({
