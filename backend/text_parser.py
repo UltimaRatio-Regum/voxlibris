@@ -100,6 +100,13 @@ class TextParser:
                 end_index=len(text),
             ))
         
+        name_map = self._build_speaker_normalization_map(speakers_set)
+        if name_map:
+            for seg in raw_segments:
+                if seg.speaker and seg.speaker in name_map:
+                    seg.speaker = name_map[seg.speaker]
+            speakers_set = {name_map.get(s, s) for s in speakers_set}
+
         paragraph_segments = self._split_by_paragraphs(raw_segments)
         chunked_segments = self._chunk_all_segments(paragraph_segments)
         
@@ -129,6 +136,9 @@ class TextParser:
             approxDurationSeconds=round(wc / self.WORDS_PER_SECOND, 1),
         )
     
+    PRONOUNS_MALE = {"he", "him", "his"}
+    PRONOUNS_FEMALE = {"she", "her", "hers"}
+
     def _find_speaker_improved(
         self, 
         text: str, 
@@ -137,35 +147,187 @@ class TextParser:
         speaker_history: list[str]
     ) -> Optional[str]:
         """
-        Find speaker with improved accuracy by checking both before and after quote.
-        Prioritizes post-quote attribution ("Hello," said John).
+        Find speaker using multiple strategies:
+        1. Explicit dialogue tags with named speakers
+        2. Multi-word speaker names in dialogue tags (e.g. "said the old man")
+        3. Pronoun-based dialogue tags resolved against nearby named characters
+        4. Named character mentioned in narration immediately before the quote
+        5. Turn-taking: alternate between the last two speakers
         """
-        context_before = text[max(0, quote_start - 150):quote_start]
-        context_after = text[quote_end:min(len(text), quote_end + 150)]
-        
-        for context, is_after in [(context_after, True), (context_before, False)]:
+        context_before = text[max(0, quote_start - 200):quote_start]
+        context_after = text[quote_end:min(len(text), quote_end + 200)]
+
+        named = self._find_named_speaker_in_tag(context_before, context_after)
+        if named:
+            return named
+
+        multi = self._find_multiword_speaker_in_tag(context_after, context_before)
+        if multi:
+            return multi
+
+        pronoun_speaker = self._resolve_pronoun_speaker(
+            context_before, context_after, text, quote_start, speaker_history
+        )
+        if pronoun_speaker:
+            return pronoun_speaker
+
+        narrative_speaker = self._find_speaker_in_narration(context_before, speaker_history)
+        if narrative_speaker:
+            return narrative_speaker
+
+        turn_speaker = self._infer_turn_taking(speaker_history)
+        if turn_speaker:
+            return turn_speaker
+
+        return None
+
+    STOP_WORDS_LOWER = {
+        "the", "a", "an", "this", "that", "then", "but", "and", "it",
+        "he", "she", "him", "her", "his", "hers", "they", "them",
+        "i", "me", "my", "we", "us", "our", "you", "your",
+    }
+
+    def _find_named_speaker_in_tag(self, ctx_before: str, ctx_after: str) -> Optional[str]:
+        ctx_after_clean = re.sub(r'^[\s""\u201c\u201d,]+', '', ctx_after)
+        for ctx, is_after in [(ctx_after_clean, True), (ctx_before, False)]:
             for verb in self.DIALOGUE_VERBS:
                 if is_after:
-                    pattern = rf'^\s*{verb}[sd]?\s+([A-Z][a-z]+)'
+                    pat = rf'(?i)^\s*,?\s*{verb}[sd]?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+                    m = re.search(pat, ctx)
+                    if not m:
+                        pat2 = rf'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+{verb}[sd]?\b'
+                        m = re.search(pat2, ctx)
                 else:
-                    pattern = rf'([A-Z][a-z]+)\s+{verb}[sd]?\s*[,.]?\s*$'
-                
-                match = re.search(pattern, context, re.IGNORECASE)
-                if match:
-                    return match.group(1)
-        
+                    pat = rf'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?i:{verb}[sd]?)\s*[,.]?\s*$'
+                    m = re.search(pat, ctx)
+                if m:
+                    name = m.group(1).strip()
+                    if name.lower() not in self.STOP_WORDS_LOWER:
+                        return name
+        return None
+
+    def _find_multiword_speaker_in_tag(self, ctx_after: str, ctx_before: str) -> Optional[str]:
         for verb in self.DIALOGUE_VERBS:
-            after_pattern = rf'^\s*,?\s*{verb}\s+([A-Z][a-z]+)'
-            match = re.search(after_pattern, context_after, re.IGNORECASE)
-            if match:
-                return match.group(1)
-        
+            pat = rf'^\s*,?\s*{verb}[sd]?\s+(the\s+\w+(?:\s+\w+)?)'
+            m = re.search(pat, ctx_after, re.IGNORECASE)
+            if m:
+                return m.group(1).strip()
+            pat2 = rf'(the\s+\w+(?:\s+\w+)?)\s+{verb}[sd]?\s*[,.]?\s*$'
+            m2 = re.search(pat2, ctx_before, re.IGNORECASE)
+            if m2:
+                return m2.group(1).strip()
+        return None
+
+    def _resolve_pronoun_speaker(
+        self, ctx_before: str, ctx_after: str, full_text: str,
+        quote_start: int, speaker_history: list[str]
+    ) -> Optional[str]:
+        pronoun_found = None
+        ctx_after_clean = re.sub(r'^[\s""\u201c\u201d]+', '', ctx_after)
+
         for verb in self.DIALOGUE_VERBS:
-            before_pattern = rf'([A-Z][a-z]+)\s+{verb}'
-            match = re.search(before_pattern, context_before, re.IGNORECASE)
-            if match:
-                return match.group(1)
-        
+            pat_pron_verb = rf'^(he|she)\s+{verb}[sd]?\b'
+            m = re.search(pat_pron_verb, ctx_after_clean, re.IGNORECASE)
+            if m:
+                pronoun_found = m.group(1).lower()
+                break
+            pat_verb_pron = rf'^{verb}[sd]?\s+(he|she)\b'
+            m2 = re.search(pat_verb_pron, ctx_after_clean, re.IGNORECASE)
+            if m2:
+                pronoun_found = m2.group(1).lower()
+                break
+            pat_before = rf'\b(he|she)\s+{verb}[sd]?\s*[,.]?\s*$'
+            m3 = re.search(pat_before, ctx_before, re.IGNORECASE)
+            if m3:
+                pronoun_found = m3.group(1).lower()
+                break
+
+        if not pronoun_found:
+            return None
+
+        ctx_before_clean = re.sub(r'[\s""\u201c\u201d]+$', '', ctx_before)
+        has_narration_gap = bool(re.search(r'[.!?]\s+[A-Z]', ctx_before_clean[-60:])) if ctx_before_clean else False
+
+        if len(speaker_history) >= 2 and has_narration_gap:
+            last_speaker = speaker_history[-1]
+            for name in reversed(speaker_history[:-1]):
+                if name != last_speaker:
+                    return name
+
+        if speaker_history:
+            return speaker_history[-1]
+
+        nearby_text = full_text[max(0, quote_start - 500):quote_start]
+        name_pattern = re.compile(r'\b([A-Z][a-z]{2,})\b')
+        nearby_names = name_pattern.findall(nearby_text)
+
+        stop_words_upper = {
+            "The", "And", "But", "Then", "This", "That", "His", "Her", "She", "He",
+            "They", "Their", "When", "What", "Where", "How", "Why", "With", "From",
+            "Into", "Before", "After", "About", "Just", "Even", "Still", "Already",
+            "Not", "For", "Its", "All", "Some", "Any", "Each", "One", "Two",
+        }
+        nearby_names = [n for n in nearby_names if n not in stop_words_upper]
+
+        if nearby_names:
+            return nearby_names[-1]
+
+        return None
+
+    def _build_speaker_normalization_map(self, speakers: set[str]) -> dict[str, str]:
+        name_map: dict[str, str] = {}
+        speaker_list = sorted(speakers, key=len)
+
+        for i, short in enumerate(speaker_list):
+            for long_name in speaker_list[i+1:]:
+                if short in long_name.split():
+                    name_map[long_name] = short
+                    break
+
+        return name_map
+
+    def _find_speaker_in_narration(self, ctx_before: str, speaker_history: list[str]) -> Optional[str]:
+        sentences = [s for s in re.split(r'[.!?]\s+', ctx_before) if s.strip()]
+        last_sentence = sentences[-1] if sentences else ctx_before
+
+        stop_words = {
+            "the", "and", "but", "then", "this", "that", "his", "her", "she", "he",
+            "they", "their", "when", "what", "where", "how", "why", "with", "from",
+            "into", "before", "after", "about", "just", "even", "still", "already",
+            "not", "for", "its", "all", "some", "any", "each", "one", "two",
+            "suddenly", "meanwhile", "however", "finally", "later", "outside",
+            "inside", "perhaps", "slowly", "quickly", "meanwhile", "instead",
+        }
+
+        known = set(speaker_history)
+        for name in known:
+            if name in last_sentence:
+                return name
+
+        name_pattern = re.compile(r'\b([A-Z][a-z]{2,})\b')
+        names_in_last = name_pattern.findall(last_sentence)
+        for name in names_in_last:
+            if name.lower() not in stop_words:
+                if re.search(r'\b' + re.escape(name) + r'\b(?!\s+(was|is|were|are|had|has|the|a)\b)', last_sentence):
+                    return name
+
+        return None
+
+    def _infer_turn_taking(self, speaker_history: list[str]) -> Optional[str]:
+        if len(speaker_history) < 2:
+            return None
+
+        last = speaker_history[-1]
+        unique_recent = []
+        for sp in reversed(speaker_history):
+            if sp not in unique_recent:
+                unique_recent.append(sp)
+            if len(unique_recent) >= 2:
+                break
+
+        if len(unique_recent) >= 2:
+            return unique_recent[1] if unique_recent[0] == last else unique_recent[0]
+
         return None
     
     EMOTION_KEYWORDS = {
