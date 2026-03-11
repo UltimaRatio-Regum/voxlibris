@@ -101,19 +101,96 @@ def _rechunk_segment(text: str, max_words: int = 30) -> list[str]:
     return chunks
 
 
-def _validate_llm_response(data: dict) -> bool:
+def _normalize_llm_response(data: dict) -> dict:
     if not isinstance(data, dict):
-        return False
-    if "segments" not in data or not isinstance(data.get("segments"), list):
-        return False
-    for seg in data["segments"]:
+        raise ValueError("LLM response is not a dict")
+
+    flat_segments = []
+
+    if "chunks" in data and isinstance(data["chunks"], list):
+        for chunk in data["chunks"]:
+            if not isinstance(chunk, dict):
+                continue
+            segs = chunk.get("segments", [])
+            if not isinstance(segs, list):
+                continue
+            flat_segments.extend(segs)
+
+    if not flat_segments and "segments" in data and isinstance(data["segments"], list):
+        flat_segments = data["segments"]
+
+    if not flat_segments:
+        raise ValueError("LLM response has no 'segments' or 'chunks' array")
+
+    normalized = []
+    detected_speakers = set()
+
+    if isinstance(data.get("characters"), list):
+        for c in data["characters"]:
+            if isinstance(c, str) and c.strip():
+                detected_speakers.add(c.strip())
+
+    if isinstance(data.get("detectedSpeakers"), list):
+        for s in data["detectedSpeakers"]:
+            if isinstance(s, str) and s.strip():
+                detected_speakers.add(s.strip())
+
+    for seg in flat_segments:
         if not isinstance(seg, dict):
-            return False
-        if "type" not in seg or "text" not in seg:
-            return False
-        if seg["type"] not in ["narration", "dialogue"]:
-            return False
-    return True
+            continue
+        text = seg.get("text", "")
+        if not isinstance(text, str):
+            text = str(text) if text else ""
+        text = text.strip()
+        if not text:
+            continue
+
+        seg_type = str(seg.get("type", "narration")).lower().strip()
+        if seg_type in ("spoken", "dialog"):
+            seg_type = "dialogue"
+        if seg_type not in ("narration", "dialogue"):
+            seg_type = "narration"
+
+        speaker = seg.get("speaker")
+        if not speaker and "speaker_candidates" in seg:
+            candidates = seg["speaker_candidates"]
+            if isinstance(candidates, dict) and candidates:
+                try:
+                    speaker = max(candidates, key=lambda k: float(candidates[k]) if candidates[k] is not None else 0)
+                except (TypeError, ValueError):
+                    speaker = next(iter(candidates))
+            elif isinstance(candidates, list) and candidates:
+                speaker = candidates[0] if isinstance(candidates[0], str) else None
+
+        if speaker is not None:
+            speaker = str(speaker).strip() or None
+
+        if speaker:
+            detected_speakers.add(speaker)
+
+        emotion_data = seg.get("emotion", "neutral")
+        if isinstance(emotion_data, dict):
+            emotion = str(emotion_data.get("label", "neutral"))
+        else:
+            emotion = str(emotion_data) if emotion_data else "neutral"
+        emotion = emotion.lower().strip()
+        if emotion not in CANONICAL_EMOTIONS:
+            emotion = "neutral"
+
+        normalized.append({
+            "type": seg_type,
+            "text": text,
+            "speaker": speaker,
+            "emotion": emotion,
+        })
+
+    if not normalized:
+        raise ValueError("LLM response produced no valid segments")
+
+    return {
+        "segments": normalized,
+        "detectedSpeakers": sorted(detected_speakers),
+    }
 
 
 async def _call_llm_for_section(
@@ -209,15 +286,12 @@ Return ONLY valid JSON, no markdown fences."""
         if content.endswith("```"):
             content = content[:-3]
 
-        result = json.loads(content.strip())
-
-        if not _validate_llm_response(result):
-            raise ValueError("LLM response failed validation")
-
-        if not result.get("segments"):
-            raise ValueError("LLM returned empty segments")
-
+        raw_result = json.loads(content.strip())
+        result = _normalize_llm_response(raw_result)
         return result
+    except json.JSONDecodeError as e:
+        logger.error(f"LLM returned invalid JSON: {e}\nRaw content: {content[:500] if content else '(empty)'}")
+        raise
     except Exception as e:
         logger.error(f"LLM call failed for section: {e}")
         raise
