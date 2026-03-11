@@ -1,0 +1,44 @@
+===== Application Startup at 2026-03-11 14:22:27 =====
+
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:indextts2-engine:Loading IndexTTS2 model from /app/checkpoints on cpu (fp16=False)...
+>> GPT weights restored from: /app/checkpoints/gpt.pth
+WARNING:indextts.gpt.transformers_modeling_utils:GPT2InferenceModel has generative capabilities, as `prepare_inputs_for_generation` is explicitly overwritten. However, it doesn't directly inherit from `GenerationMixin`. From 👉v4.50👈 onwards, `PreTrainedModel` will NOT inherit from `GenerationMixin`, and this model will lose the ability to call `generate` and other related functions.
+  - If you're using `trust_remote_code=True`, you can get rid of this warning by loading the model with an auto class. See https://huggingface.co/docs/transformers/en/model_doc/auto#auto-classes
+  - If you are the owner of the model architecture code, please modify your model class such that it inherits from `GenerationMixin` (after `PreTrainedModel`, otherwise you'll get an exception).
+  - If you are not the owner of the model architecture class, please contact the model code owner to update it.
+>> semantic_codec weights restored from: ./checkpoints/hf_cache/models--amphion--MaskGCT/snapshots/265c6cef07625665d0c28d2faafb1415562379dc/semantic_codec/model.safetensors
+cfm loaded
+length_regulator loaded
+gpt_layer loaded
+>> s2mel weights restored from: /app/checkpoints/s2mel.pth
+>> campplus_model weights restored from: ./checkpoints/hf_cache/models--funasr--campplus/snapshots/fb71fe990cbf6031ae6987a2d76fe64f94377b7e/campplus_cn_common.bin
+Loading weights from nvidia/bigvgan_v2_22khz_80band_256x
+Removing weight norm...
+>> bigvgan weights restored from: nvidia/bigvgan_v2_22khz_80band_256x
+ERROR:    Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/starlette/routing.py", line 694, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+  File "/usr/local/lib/python3.11/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app.py", line 151, in lifespan
+    load_model()
+  File "/app/app.py", line 140, in load_model
+    tts_model = IndexTTS2(
+                ^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/indextts/infer_v2.py", line 171, in __init__
+    self.normalizer.load()
+  File "/usr/local/lib/python3.11/site-packages/indextts/utils/front.py", line 132, in load
+    os.makedirs(cache_dir)
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [Errno 13] Permission denied: '/usr/local/lib/python3.11/site-packages/indextts/utils/tagger_cache'
+
+ERROR:    Application startup failed. Exiting.
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:matplotlib.font_manager:generated new fontManager
+INFO:indextts2-engine:Loading IndexTTS2 model from /app/checkpoints on cpu (fp16=False)...
+ 

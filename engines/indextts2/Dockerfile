@@ -17,6 +17,12 @@ RUN pip install --no-cache-dir torch==2.8.0 torchaudio==2.8.0
 ENV GIT_LFS_SKIP_SMUDGE=1
 RUN pip install --no-cache-dir "indextts[webui] @ git+https://github.com/index-tts/index-tts.git@main"
 
+RUN python -c "import indextts; import os; \
+    pkg_dir = os.path.dirname(indextts.__file__); \
+    cache_dir = os.path.join(pkg_dir, 'utils', 'tagger_cache'); \
+    os.makedirs(cache_dir, exist_ok=True)" \
+    && chmod -R a+rw $(python -c "import indextts; import os; print(os.path.dirname(indextts.__file__))")/utils/tagger_cache
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
