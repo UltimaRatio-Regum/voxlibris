@@ -55,6 +55,33 @@ async def process_job(job_id: str):
     finally:
         db.close()
     
+    tts_engine = config.get("ttsEngine", "edge-tts")
+    narrator_voice_id = config.get("narratorVoiceId")
+    speakers = config.get("speakers", {})
+    exaggeration = config.get("defaultExaggeration", 0.5)
+
+    remote_client = get_remote_engine(tts_engine)
+    if remote_client:
+        update_job_status(job_id, JobStatus.PROCESSING, error_message="Waking up TTS engine (may take a few minutes if the Space is sleeping)...")
+        try:
+            await remote_client.wake_up(
+                timeout=300.0,
+                is_cancelled=lambda: job_id not in active_jobs,
+            )
+            logger.info(f"Remote engine {tts_engine} is ready for job {job_id}")
+        except asyncio.CancelledError:
+            logger.info(f"Job {job_id} cancelled during engine wake-up")
+            update_job_status(job_id, JobStatus.FAILED, error_message="Job cancelled during engine wake-up")
+            return
+        except TimeoutError as e:
+            logger.error(f"Remote engine {tts_engine} failed to wake up: {e}")
+            update_job_status(job_id, JobStatus.FAILED, error_message=f"TTS engine failed to start: {e}")
+            return
+        except Exception as e:
+            logger.error(f"Error waking remote engine {tts_engine}: {e}")
+            update_job_status(job_id, JobStatus.FAILED, error_message=f"TTS engine failed to start: {e}")
+            return
+
     update_job_status(job_id, JobStatus.PROCESSING)
     
     job_dir = os.path.join(TTS_OUTPUT_DIR, job_id)
@@ -62,11 +89,6 @@ async def process_job(job_id: str):
     
     tts_service = TTSService()
     audio_processor = AudioProcessor()
-    
-    tts_engine = config.get("ttsEngine", "edge-tts")
-    narrator_voice_id = config.get("narratorVoiceId")
-    speakers = config.get("speakers", {})
-    exaggeration = config.get("defaultExaggeration", 0.5)
     
     voice_path_cache: Dict[str, str] = {}
     temp_files: List[str] = []

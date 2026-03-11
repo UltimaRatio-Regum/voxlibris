@@ -171,6 +171,12 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                   </CollapsibleTrigger>
 
                   <div className="pl-6">
+                    {job.status === "processing" && job.errorMessage && job.completedSegments === 0 && (
+                      <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 mb-1" data-testid={`job-wakeup-${job.id}`}>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>{job.errorMessage}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                       <span>
                         {job.completedSegments}/{job.totalSegments} segments

@@ -120,7 +120,10 @@ def get_all_jobs(include_completed: bool = True, limit: int = 50) -> List[Dict[s
                 "completedSegments": job.completed_segments,
                 "failedSegments": job.failed_segments,
                 "ttsEngine": job.tts_engine,
+                "narratorVoiceId": job.narrator_voice_id,
+                "errorMessage": job.error_message,
                 "createdAt": job.created_at.isoformat() if job.created_at else None,
+                "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
                 "progress": (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0,
             }
             for job in jobs

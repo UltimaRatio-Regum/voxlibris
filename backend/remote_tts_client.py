@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT_DETAILS = 15.0
 TIMEOUT_TTS = 120.0
+TIMEOUT_WAKE = 300.0
+WAKE_POLL_INTERVAL = 10.0
 
 
 @dataclass
@@ -140,4 +142,77 @@ class RemoteTTSClient:
         raise RuntimeError(
             f"TTS engine returned unexpected content-type: {content_type}. "
             f"Error: {error_data.get('error', 'unknown')}"
+        )
+
+    async def wake_up(self, timeout: float = TIMEOUT_WAKE, is_cancelled=None) -> bool:
+        """Poll the engine until it responds, up to timeout seconds.
+        
+        HuggingFace Spaces can go to sleep after inactivity. This method
+        sends periodic requests to wake the Space and waits for it to become
+        healthy before returning.
+
+        Tries /health first; if the engine returns 404/405 (no health endpoint),
+        falls back to POST /GetEngineDetails as a readiness check.
+
+        Args:
+            timeout: Maximum seconds to wait.
+            is_cancelled: Optional callable returning True if the job was cancelled.
+
+        Returns True if healthy, raises on timeout or cancellation.
+        """
+        import asyncio
+        import time
+
+        deadline = time.monotonic() + timeout
+        attempt = 0
+        last_error = None
+        use_details_fallback = False
+
+        while time.monotonic() < deadline:
+            if is_cancelled and is_cancelled():
+                raise asyncio.CancelledError("Job was cancelled during engine wake-up")
+
+            attempt += 1
+            remaining = max(deadline - time.monotonic(), 5.0)
+            try:
+                async with httpx.AsyncClient(timeout=min(30.0, remaining)) as client:
+                    if use_details_fallback:
+                        resp = await client.post(
+                            f"{self.base_url}/GetEngineDetails",
+                            json={},
+                            headers=self._headers(),
+                        )
+                    else:
+                        resp = await client.get(
+                            f"{self.base_url}/health",
+                            headers=self._headers(),
+                        )
+
+                    if resp.status_code == 200:
+                        logger.info(f"Remote engine at {self.base_url} is awake (attempt {attempt})")
+                        return True
+
+                    if not use_details_fallback and resp.status_code in (404, 405):
+                        logger.info(f"Engine has no /health endpoint, falling back to /GetEngineDetails")
+                        use_details_fallback = True
+                        continue
+
+                    last_error = f"HTTP {resp.status_code}"
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout, httpx.RemoteProtocolError) as e:
+                last_error = str(e)
+                logger.debug(f"Wake attempt {attempt} for {self.base_url}: {last_error}")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(f"Wake attempt {attempt} unexpected error: {last_error}")
+
+            if time.monotonic() + WAKE_POLL_INTERVAL < deadline:
+                await asyncio.sleep(WAKE_POLL_INTERVAL)
+            else:
+                break
+
+        raise TimeoutError(
+            f"Remote engine at {self.base_url} did not respond after {timeout}s "
+            f"({attempt} attempts). Last error: {last_error}"
         )
