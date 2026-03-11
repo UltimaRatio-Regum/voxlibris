@@ -182,6 +182,7 @@ def numpy_to_wav_bytes(audio_np: np.ndarray, sample_rate: int) -> bytes:
 class ConvertRequest(BaseModel):
     input_text: str
     builtin_voice_id: Optional[str] = None
+    base_voice_id: Optional[str] = None
     voice_to_clone_sample: Optional[str] = None
     random_seed: Optional[int] = None
     emotion_set: list[str] = Field(default_factory=lambda: ["neutral"])
@@ -206,6 +207,7 @@ async def get_engine_details(request: Request):
         "max_seconds_per_conversion": MAX_SECONDS,
         "supports_voice_cloning": True,
         "builtin_voices": ALL_VOICES,
+        "base_voices": ALL_VOICES,
         "supported_emotions": CANONICAL_EMOTIONS,
         "extra_properties": {
             "architecture": "MeloTTS base + ToneColorConverter for voice cloning",
@@ -235,8 +237,9 @@ async def convert_text_to_speech(request: Request):
             content={"error": "Input text is empty", "error_code": "INVALID_REQUEST"}
         )
 
-    voice_id = req.builtin_voice_id or "en-default"
-    voice_info = VOICE_LOOKUP.get(voice_id)
+    effective_voice_id = req.base_voice_id or req.builtin_voice_id or "en-default"
+    voice_id = req.builtin_voice_id or effective_voice_id
+    voice_info = VOICE_LOOKUP.get(effective_voice_id)
     if not voice_info:
         return JSONResponse(
             status_code=404,
@@ -349,7 +352,7 @@ async def convert_text_to_speech(request: Request):
                 tmp_ref.name, tone_color_converter, vad=False
             )
 
-            src_se = source_ses.get(voice_info["id"])
+            src_se = source_ses.get(effective_voice_id)
             if src_se is None:
                 src_se = list(source_ses.values())[0] if source_ses else None
 

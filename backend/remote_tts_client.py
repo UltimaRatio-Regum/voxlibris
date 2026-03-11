@@ -37,6 +37,7 @@ class EngineDetails:
     max_seconds_per_conversion: int
     supports_voice_cloning: bool
     builtin_voices: List[BuiltinVoice] = field(default_factory=list)
+    base_voices: List[BuiltinVoice] = field(default_factory=list)
     supported_emotions: List[str] = field(default_factory=list)
     extra_properties: Dict[str, Any] = field(default_factory=dict)
 
@@ -45,6 +46,7 @@ class EngineDetails:
 class TTSRequest:
     input_text: str
     builtin_voice_id: Optional[str] = None
+    base_voice_id: Optional[str] = None
     voice_to_clone_sample: Optional[bytes] = None
     random_seed: Optional[int] = None
     emotion_set: List[str] = field(default_factory=lambda: ["neutral"])
@@ -95,6 +97,15 @@ class RemoteTTSClient:
                 voice_sample_url=v.get("voice_sample_url"),
             ))
 
+        base_voices = []
+        for v in data.get("base_voices", []):
+            base_voices.append(BuiltinVoice(
+                id=v["id"],
+                display_name=v["display_name"],
+                extra_info=v.get("extra_info"),
+                voice_sample_url=v.get("voice_sample_url"),
+            ))
+
         return EngineDetails(
             engine_id=data["engine_id"],
             engine_name=data["engine_name"],
@@ -104,6 +115,7 @@ class RemoteTTSClient:
             max_seconds_per_conversion=data["max_seconds_per_conversion"],
             supports_voice_cloning=data["supports_voice_cloning"],
             builtin_voices=voices,
+            base_voices=base_voices,
             supported_emotions=data.get("supported_emotions", []),
             extra_properties=data.get("extra_properties", {}),
         )
@@ -120,6 +132,9 @@ class RemoteTTSClient:
             "speed_adjust": request.speed_adjust,
             "pitch_adjust": request.pitch_adjust,
         }
+
+        if request.base_voice_id:
+            payload["base_voice_id"] = request.base_voice_id
 
         if request.voice_to_clone_sample:
             payload["voice_to_clone_sample"] = base64.b64encode(

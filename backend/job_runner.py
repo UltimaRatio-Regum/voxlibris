@@ -57,6 +57,7 @@ async def process_job(job_id: str):
     
     tts_engine = config.get("ttsEngine", "edge-tts")
     narrator_voice_id = config.get("narratorVoiceId")
+    base_voice_id = config.get("baseVoiceId")
     speakers = config.get("speakers", {})
     exaggeration = config.get("defaultExaggeration", 0.5)
 
@@ -116,6 +117,7 @@ async def process_job(job_id: str):
                     text=seg_data["text"],
                     tts_engine=tts_engine,
                     voice_id=voice_id,
+                    base_voice_id=base_voice_id,
                     sentiment=seg_data.get("sentiment"),
                     exaggeration=exaggeration,
                     voice_path_cache=voice_path_cache,
@@ -251,6 +253,7 @@ async def generate_segment_audio(
     text: str,
     tts_engine: str,
     voice_id: str = None,
+    base_voice_id: str = None,
     sentiment: Dict[str, Any] = None,
     exaggeration: float = 0.5,
     voice_path_cache: Dict[str, str] = None,
@@ -330,6 +333,7 @@ async def generate_segment_audio(
             tts_req = TTSRequest(
                 input_text=text,
                 builtin_voice_id=remote_builtin_voice,
+                base_voice_id=base_voice_id,
                 voice_to_clone_sample=voice_bytes,
                 emotion_set=emotion_set,
                 intensity=int(exaggeration * 100),

@@ -21,6 +21,12 @@ export function AdvancedTab() {
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
 
   const [narratorVoiceId, setNarratorVoiceId] = useState<string | null>(null);
+  const [baseVoiceId, setBaseVoiceId] = useState<string | null>(null);
+
+  const handleTTSEngineChange = useCallback((engine: TTSEngine) => {
+    setTTSEngine(engine);
+    setBaseVoiceId(null);
+  }, []);
   const [speakerConfigs, setSpeakerConfigs] = useState<Record<string, SpeakerConfig>>({});
 
   const [exaggeration, setExaggeration] = useState(0.5);
@@ -119,6 +125,7 @@ export function AdvancedTab() {
         })),
         config: {
           narratorVoiceId,
+          baseVoiceId,
           defaultExaggeration: exaggeration,
           pauseBetweenSegments: pauseDuration,
           speakers: speakerConfigs,
@@ -405,7 +412,7 @@ export function AdvancedTab() {
             registeredEngines={registeredEngines}
             onExaggerationChange={setExaggeration}
             onPauseDurationChange={setPauseDuration}
-            onTTSEngineChange={setTTSEngine}
+            onTTSEngineChange={handleTTSEngineChange}
           />
 
           {segments.length > 0 && (
@@ -418,8 +425,10 @@ export function AdvancedTab() {
               registeredEngines={registeredEngines}
               speakerConfigs={speakerConfigs}
               narratorVoiceId={narratorVoiceId}
+              baseVoiceId={baseVoiceId}
               onUpdateSpeakerConfig={handleUpdateSpeakerConfig}
               onUpdateNarratorVoice={setNarratorVoiceId}
+              onUpdateBaseVoice={setBaseVoiceId}
               onVoiceUploaded={handleVoiceUploaded}
             />
           )}

@@ -427,6 +427,7 @@ async def list_tts_engines():
                 "max_seconds_per_conversion": e.max_seconds_per_conversion,
                 "supports_voice_cloning": e.supports_voice_cloning,
                 "builtin_voices": json.loads(e.builtin_voices_json) if e.builtin_voices_json else [],
+                "base_voices": json.loads(e.base_voices_json) if e.base_voices_json else [],
                 "supported_emotions": json.loads(e.supported_emotions_json) if e.supported_emotions_json else [],
                 "last_tested_at": e.last_tested_at.isoformat() if e.last_tested_at else None,
                 "last_test_success": e.last_test_success,
@@ -465,6 +466,10 @@ async def add_tts_engine(request: AddEngineRequest):
                 {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
                 for v in details.builtin_voices
             ])
+            existing.base_voices_json = json.dumps([
+                {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
+                for v in details.base_voices
+            ]) if details.base_voices else None
             existing.supported_emotions_json = json.dumps(details.supported_emotions)
             existing.extra_properties_json = json.dumps(details.extra_properties)
             existing.is_active = True
@@ -489,6 +494,10 @@ async def add_tts_engine(request: AddEngineRequest):
                     {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
                     for v in details.builtin_voices
                 ]),
+                base_voices_json=json.dumps([
+                    {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
+                    for v in details.base_voices
+                ]) if details.base_voices else None,
                 supported_emotions_json=json.dumps(details.supported_emotions),
                 extra_properties_json=json.dumps(details.extra_properties),
                 is_active=True,
@@ -523,6 +532,10 @@ async def test_tts_engine(engine_id: str):
                 {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
                 for v in details.builtin_voices
             ])
+            entry.base_voices_json = json.dumps([
+                {"id": v.id, "display_name": v.display_name, "extra_info": v.extra_info, "voice_sample_url": v.voice_sample_url}
+                for v in details.base_voices
+            ]) if details.base_voices else None
             entry.supported_emotions_json = json.dumps(details.supported_emotions)
             entry.updated_at = datetime.utcnow()
             db.commit()
@@ -1784,6 +1797,7 @@ class CreateProjectRequest(BaseModel):
 class UpdateProjectSettingsRequest(BaseModel):
     ttsEngine: Optional[str] = None
     narratorVoiceId: Optional[str] = None
+    baseVoiceId: Optional[str] = None
     exaggeration: Optional[float] = None
     pauseDuration: Optional[float] = None
     speakersJson: Optional[str] = None
@@ -1916,6 +1930,7 @@ def _serialize_project_full(project: Project, db) -> dict:
         "status": project.status,
         "ttsEngine": project.tts_engine,
         "narratorVoiceId": project.narrator_voice_id,
+        "baseVoiceId": project.base_voice_id,
         "exaggeration": project.exaggeration,
         "pauseDuration": project.pause_duration,
         "speakersJson": project.speakers_json,
@@ -2048,6 +2063,8 @@ async def update_project(project_id: str, request: UpdateProjectSettingsRequest)
             project.tts_engine = request.ttsEngine
         if request.narratorVoiceId is not None:
             project.narrator_voice_id = request.narratorVoiceId
+        if request.baseVoiceId is not None:
+            project.base_voice_id = request.baseVoiceId
         if request.exaggeration is not None:
             project.exaggeration = request.exaggeration
         if request.pauseDuration is not None:
@@ -2241,6 +2258,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
 
         tts_engine = project.tts_engine
         narrator_voice_id = project.narrator_voice_id
+        base_voice_id = project.base_voice_id
         speakers = json.loads(project.speakers_json) if project.speakers_json else {}
         exaggeration = project.exaggeration
         pause_duration = project.pause_duration
@@ -2284,6 +2302,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                 "speakers": speakers,
                 "ttsEngine": tts_engine,
                 "narratorVoiceId": narrator_voice_id,
+                "baseVoiceId": base_voice_id,
                 "projectId": project_id,
                 "scopeType": request.scopeType,
                 "scopeId": request.scopeId,

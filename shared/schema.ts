@@ -130,6 +130,7 @@ export type SpeakerConfig = z.infer<typeof speakerConfigSchema>;
 // Project configuration
 export const projectConfigSchema = z.object({
   narratorVoiceId: z.string().nullable(),
+  baseVoiceId: z.string().nullable().optional(),
   defaultExaggeration: z.number().min(0).max(1).default(0.5),
   pauseBetweenSegments: z.number().min(0).max(3000).default(500),
   speakers: z.record(z.string(), speakerConfigSchema),
@@ -298,6 +299,7 @@ export const projectSchema = z.object({
   status: projectStatusSchema,
   ttsEngine: z.string(),
   narratorVoiceId: z.string().nullable(),
+  baseVoiceId: z.string().nullable().optional(),
   exaggeration: z.number(),
   pauseDuration: z.number(),
   speakersJson: z.string().nullable(),
@@ -339,6 +341,7 @@ export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 export const updateProjectSettingsSchema = z.object({
   ttsEngine: z.string().optional(),
   narratorVoiceId: z.string().nullable().optional(),
+  baseVoiceId: z.string().nullable().optional(),
   exaggeration: z.number().min(0).max(1).optional(),
   pauseDuration: z.number().min(0).max(3000).optional(),
   speakersJson: z.string().nullable().optional(),

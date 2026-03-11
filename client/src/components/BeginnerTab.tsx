@@ -175,7 +175,7 @@ export function BeginnerTab() {
     if (registeredEngine?.builtin_voices?.length) {
       return registeredEngine.builtin_voices.map(v => ({
         value: `remote:${v.id}`,
-        label: v.name,
+        label: v.display_name,
       }));
     }
     return [{ value: "default", label: "Default Voice" }];

@@ -37,8 +37,10 @@ interface SpeakerAssignmentProps {
   registeredEngines?: RegisteredEngine[];
   speakerConfigs: Record<string, SpeakerConfig>;
   narratorVoiceId: string | null;
+  baseVoiceId?: string | null;
   onUpdateSpeakerConfig: (speaker: string, config: Partial<SpeakerConfig>) => void;
   onUpdateNarratorVoice: (voiceId: string | null) => void;
+  onUpdateBaseVoice?: (voiceId: string | null) => void;
   onVoiceUploaded?: (voiceId: string) => void;
 }
 
@@ -53,8 +55,10 @@ export function SpeakerAssignment({
   registeredEngines = [],
   speakerConfigs,
   narratorVoiceId,
+  baseVoiceId,
   onUpdateSpeakerConfig,
   onUpdateNarratorVoice,
+  onUpdateBaseVoice,
   onVoiceUploaded,
 }: SpeakerAssignmentProps) {
   const { toast } = useToast();
@@ -67,6 +71,7 @@ export function SpeakerAssignment({
 
   const currentRegisteredEngine = registeredEngines.find(e => e.engine_id === ttsEngine);
   const registeredBuiltinVoices = currentRegisteredEngine?.builtin_voices ?? [];
+  const registeredBaseVoices = currentRegisteredEngine?.base_voices ?? [];
 
   const handleVoiceChange = useCallback((value: string, target: { type: "narrator" | "speaker"; speaker?: string }) => {
     if (value === UPLOAD_NEW_VALUE) {
@@ -152,12 +157,12 @@ export function SpeakerAssignment({
               <Server className="h-3 w-3" />
               {currentRegisteredEngine?.engine_name} Voices
             </SelectLabel>
-            {registeredBuiltinVoices.map((voice) => (
+            {registeredBuiltinVoices.map((voice: any) => (
               <SelectItem key={`remote:${voice.id}`} value={`remote:${voice.id}`}>
                 <div className="flex items-center gap-2">
                   <Server className="h-3 w-3" />
-                  {voice.name}
-                  {voice.language && <span className="text-xs text-muted-foreground">{voice.language}</span>}
+                  {voice.display_name || voice.name}
+                  {(voice.extra_info || voice.language) && <span className="text-xs text-muted-foreground">{voice.extra_info || voice.language}</span>}
                 </div>
               </SelectItem>
             ))}
@@ -225,6 +230,37 @@ export function SpeakerAssignment({
         <CardContent>
           <ScrollArea className={speakers.length > 2 ? "h-[400px]" : ""}>
             <div className="space-y-6 pr-4">
+              {registeredBaseVoices.length > 0 && (
+                <div className="p-4 rounded-md bg-muted/50 border">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Globe className="h-4 w-4 text-primary" />
+                    <Label className="font-medium">Base Voice / Language</Label>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Controls the language and accent of generated speech. Used as the foundation when voice cloning is applied.
+                  </p>
+                  <Select
+                    value={baseVoiceId || registeredBaseVoices[0]?.id || ""}
+                    onValueChange={(v) => onUpdateBaseVoice?.(v)}
+                  >
+                    <SelectTrigger data-testid="select-base-voice">
+                      <SelectValue placeholder="Select base voice" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {registeredBaseVoices.map((voice) => (
+                        <SelectItem key={voice.id} value={voice.id}>
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-3 w-3" />
+                            {voice.display_name}
+                            {voice.extra_info && <span className="text-xs text-muted-foreground">{voice.extra_info}</span>}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <div className="p-4 rounded-md bg-muted/50 border">
                 <div className="flex items-center gap-2 mb-3">
                   <Volume2 className="h-4 w-4 text-primary" />

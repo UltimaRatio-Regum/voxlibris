@@ -114,6 +114,7 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
           project={project}
           allEngines={allEngines}
           allVoices={allVoices}
+          registeredEngines={registeredEngines}
           onRefresh={onRefresh}
         />
       )}
@@ -165,11 +166,13 @@ function ProjectSettingsPanel({
   project,
   allEngines,
   allVoices,
+  registeredEngines,
   onRefresh,
 }: {
   project: ProjectData;
   allEngines: { id: string; label: string }[];
   allVoices: { id: string; label: string }[];
+  registeredEngines: any[];
   onRefresh: () => void;
 }) {
   const { toast } = useToast();
@@ -177,6 +180,7 @@ function ProjectSettingsPanel({
 
   const [ttsEngine, setTtsEngine] = useState(project.ttsEngine || "edge-tts");
   const [narratorVoice, setNarratorVoice] = useState(project.narratorVoiceId || "");
+  const [baseVoiceId, setBaseVoiceId] = useState(project.baseVoiceId || "");
   const [exaggeration, setExaggeration] = useState(project.exaggeration ?? 0.5);
   const [pauseDuration, setPauseDuration] = useState(project.pauseDuration ?? 500);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>(project.outputFormat || "mp3");
@@ -190,6 +194,7 @@ function ProjectSettingsPanel({
   useEffect(() => {
     setTtsEngine(project.ttsEngine || "edge-tts");
     setNarratorVoice(project.narratorVoiceId || "");
+    setBaseVoiceId(project.baseVoiceId || "");
     setExaggeration(project.exaggeration ?? 0.5);
     setPauseDuration(project.pauseDuration ?? 500);
     setOutputFormat(project.outputFormat || "mp3");
@@ -205,6 +210,7 @@ function ProjectSettingsPanel({
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
         ttsEngine,
         narratorVoiceId: narratorVoice || null,
+        baseVoiceId: baseVoiceId || null,
         exaggeration,
         pauseDuration,
         outputFormat,
@@ -260,6 +266,7 @@ function ProjectSettingsPanel({
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
         ttsEngine,
         narratorVoiceId: narratorVoice || null,
+        baseVoiceId: baseVoiceId || null,
         exaggeration,
         pauseDuration,
         outputFormat,
@@ -318,7 +325,7 @@ function ProjectSettingsPanel({
       <div className="grid gap-4">
         <div className="space-y-2">
           <Label>TTS Engine</Label>
-          <Select value={ttsEngine} onValueChange={setTtsEngine}>
+          <Select value={ttsEngine} onValueChange={(v) => { setTtsEngine(v); setBaseVoiceId(""); }}>
             <SelectTrigger data-testid="select-tts-engine">
               <SelectValue />
             </SelectTrigger>
@@ -343,6 +350,31 @@ function ProjectSettingsPanel({
             </SelectContent>
           </Select>
         </div>
+
+        {(() => {
+          const engine = registeredEngines.find((e: any) => (e.engine_id || e.id) === ttsEngine);
+          const baseVoices = engine?.base_voices || [];
+          if (baseVoices.length === 0) return null;
+          return (
+            <div className="space-y-2">
+              <Label>Base Voice / Language</Label>
+              <p className="text-xs text-muted-foreground">Controls the language and accent of generated speech</p>
+              <Select value={baseVoiceId || baseVoices[0]?.id || ""} onValueChange={setBaseVoiceId}>
+                <SelectTrigger data-testid="select-base-voice">
+                  <SelectValue placeholder="Select base voice..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {baseVoices.map((v: any) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.display_name}
+                      {v.extra_info && ` — ${v.extra_info}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          );
+        })()}
 
         <div className="space-y-2">
           <Label>Exaggeration: {exaggeration.toFixed(2)}</Label>

@@ -21,7 +21,8 @@ export interface RegisteredEngine {
   engine_name: string;
   base_url: string;
   supports_voice_cloning: boolean;
-  builtin_voices: Array<{ id: string; name: string; language?: string }>;
+  builtin_voices: Array<{ id: string; display_name: string; extra_info?: string }>;
+  base_voices: Array<{ id: string; display_name: string; extra_info?: string }>;
   supported_emotions: string[];
   last_test_success: boolean | null;
 }
