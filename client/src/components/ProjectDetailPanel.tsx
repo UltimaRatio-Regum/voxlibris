@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Wand2, Save, Book, Layers, FileText, Type, Download, Upload, X, Image, Users } from "lucide-react";
+import { Wand2, Save, Book, Layers, FileText, Type, Download, Upload, X, Image, Users, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -205,6 +205,20 @@ function ProjectSettingsPanel({
       }
     }
     return Array.from(speakers).sort();
+  }, [project]);
+
+  const unassignedDialogueCount = useMemo(() => {
+    let count = 0;
+    for (const ch of project.chapters || []) {
+      for (const sec of ch.sections || []) {
+        for (const chunk of sec.chunks || []) {
+          if (chunk.segmentType === "dialogue" && !(chunk.speakerOverride || chunk.speaker)) {
+            count++;
+          }
+        }
+      }
+    }
+    return count;
   }, [project]);
 
   const parsedSpeakerConfigs: Record<string, SpeakerConfig> = useMemo(() => {
@@ -460,7 +474,7 @@ function ProjectSettingsPanel({
         </div>
       </div>
 
-      {allDetectedSpeakers.length > 0 && (
+      {(allDetectedSpeakers.length > 0 || unassignedDialogueCount > 0) && (
         <>
           <Separator />
 
@@ -473,6 +487,20 @@ function ProjectSettingsPanel({
               Assign voices to detected speakers. Click a name to inspect their quotes.
             </p>
           </div>
+
+          {unassignedDialogueCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setInspectedSpeaker("__unassigned__")}
+              className="w-full flex items-center gap-2 rounded-lg border border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-950/20 p-3 text-sm text-yellow-800 dark:text-yellow-200 hover:bg-yellow-100 dark:hover:bg-yellow-950/30 transition-colors cursor-pointer"
+              data-testid="button-unassigned-dialogue"
+            >
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                {unassignedDialogueCount} dialogue chunk{unassignedDialogueCount !== 1 ? "s" : ""} without a speaker — click to assign
+              </span>
+            </button>
+          )}
 
           <div className="space-y-3">
             {allDetectedSpeakers.map((name) => {

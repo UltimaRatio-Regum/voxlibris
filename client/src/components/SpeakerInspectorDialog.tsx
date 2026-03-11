@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Users, Check, CheckSquare, Square, SquareCheck } from "lucide-react";
+import { Users, Check, Square, SquareCheck, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,14 +25,21 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { ProjectData, ProjectChunk } from "@shared/schema";
 
+const UNASSIGNED_SENTINEL = "__unassigned__";
+
+interface ContextPiece {
+  text: string;
+  isDialogue: boolean;
+}
+
 interface ChunkWithContext {
   chunkId: string;
   chapterTitle: string;
   sectionIndex: number;
   chunkIndex: number;
   text: string;
-  contextBefore: string;
-  contextAfter: string;
+  contextBefore: ContextPiece | null;
+  contextAfter: ContextPiece | null;
   segmentType: string;
   emotion: string | null;
   originalSpeaker: string;
@@ -47,8 +54,13 @@ interface SpeakerInspectorDialogProps {
   onMergeComplete: () => void;
 }
 
+function wrapInQuotes(text: string, isDialogue: boolean): string {
+  return isDialogue ? `\u201c${text}\u201d` : text;
+}
+
 function getChunksForSpeaker(project: ProjectData, speakerName: string): ChunkWithContext[] {
   const results: ChunkWithContext[] = [];
+  const isUnassigned = speakerName === UNASSIGNED_SENTINEL;
 
   for (const chapter of project.chapters || []) {
     for (const section of chapter.sections || []) {
@@ -56,16 +68,25 @@ function getChunksForSpeaker(project: ProjectData, speakerName: string): ChunkWi
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         const effectiveSpeaker = chunk.speakerOverride || chunk.speaker;
-        if (effectiveSpeaker !== speakerName) continue;
 
-        const contextBefore = chunks
-          .slice(Math.max(0, i - 1), i)
-          .map((c) => c.text)
-          .join(" ");
-        const contextAfter = chunks
-          .slice(i + 1, i + 2)
-          .map((c) => c.text)
-          .join(" ");
+        if (isUnassigned) {
+          if (chunk.segmentType !== "dialogue" || effectiveSpeaker) continue;
+        } else {
+          if (effectiveSpeaker !== speakerName) continue;
+        }
+
+        const prevChunk = i > 0 ? chunks[i - 1] : null;
+        const nextChunk = i < chunks.length - 1 ? chunks[i + 1] : null;
+
+        const contextBefore = prevChunk ? {
+          text: prevChunk.text.length > 150 ? "..." + prevChunk.text.slice(-150) : prevChunk.text,
+          isDialogue: prevChunk.segmentType === "dialogue",
+        } : null;
+
+        const contextAfter = nextChunk ? {
+          text: nextChunk.text.length > 150 ? nextChunk.text.slice(0, 150) + "..." : nextChunk.text,
+          isDialogue: nextChunk.segmentType === "dialogue",
+        } : null;
 
         results.push({
           chunkId: chunk.id,
@@ -73,11 +94,11 @@ function getChunksForSpeaker(project: ProjectData, speakerName: string): ChunkWi
           sectionIndex: section.sectionIndex,
           chunkIndex: i,
           text: chunk.text,
-          contextBefore: contextBefore.length > 150 ? "..." + contextBefore.slice(-150) : contextBefore,
-          contextAfter: contextAfter.length > 150 ? contextAfter.slice(0, 150) + "..." : contextAfter,
+          contextBefore,
+          contextAfter,
           segmentType: chunk.segmentType || "narration",
           emotion: chunk.emotion || null,
-          originalSpeaker: speakerName,
+          originalSpeaker: isUnassigned ? "" : speakerName,
         });
       }
     }
@@ -102,6 +123,8 @@ export function SpeakerInspectorDialog({
   const [newBulkSpeakerName, setNewBulkSpeakerName] = useState("");
   const [newRowSpeakerNames, setNewRowSpeakerNames] = useState<Record<string, string>>({});
 
+  const isUnassigned = speakerName === UNASSIGNED_SENTINEL;
+
   useEffect(() => {
     if (open) {
       setSelectedChunks(new Set());
@@ -115,7 +138,7 @@ export function SpeakerInspectorDialog({
 
   const chunks = getChunksForSpeaker(project, speakerName);
 
-  const RESERVED_NAMES = ["__new__", "__placeholder__", "__existing__"];
+  const RESERVED_NAMES = ["__new__", "__placeholder__", "__existing__", UNASSIGNED_SENTINEL];
 
   const isValidSpeakerName = (name: string): boolean => {
     const trimmed = name.trim();
@@ -127,20 +150,29 @@ export function SpeakerInspectorDialog({
     return Array.from(combined).sort();
   }, [allSpeakers, customSpeakers]);
 
+  const getOriginalSpeaker = (chunkId: string) => {
+    return isUnassigned ? "" : speakerName;
+  };
+
   const getSpeakerForChunk = (chunkId: string) => {
-    return chunkSpeakerMap[chunkId] || speakerName;
+    return chunkSpeakerMap[chunkId] || getOriginalSpeaker(chunkId);
   };
 
   const hasChanges = useMemo(() => {
     return chunks.some((chunk) => {
-      const current = getSpeakerForChunk(chunk.chunkId);
-      return current !== speakerName;
+      const current = chunkSpeakerMap[chunk.chunkId];
+      if (isUnassigned) return !!current;
+      return current !== undefined && current !== speakerName;
     });
-  }, [chunkSpeakerMap, chunks, speakerName]);
+  }, [chunkSpeakerMap, chunks, speakerName, isUnassigned]);
 
   const changedCount = useMemo(() => {
-    return chunks.filter((chunk) => getSpeakerForChunk(chunk.chunkId) !== speakerName).length;
-  }, [chunkSpeakerMap, chunks, speakerName]);
+    return chunks.filter((chunk) => {
+      const current = chunkSpeakerMap[chunk.chunkId];
+      if (isUnassigned) return !!current;
+      return current !== undefined && current !== speakerName;
+    }).length;
+  }, [chunkSpeakerMap, chunks, speakerName, isUnassigned]);
 
   const toggleChunk = (chunkId: string) => {
     setSelectedChunks((prev) => {
@@ -172,7 +204,7 @@ export function SpeakerInspectorDialog({
       delete next[chunkId];
       return next;
     });
-    if (value === speakerName) {
+    if (!isUnassigned && value === speakerName) {
       setChunkSpeakerMap((prev) => {
         const next = { ...prev };
         delete next[chunkId];
@@ -210,21 +242,13 @@ export function SpeakerInspectorDialog({
     }
     if (!targetSpeaker || targetSpeaker === "__placeholder__") return;
 
-    const updates: Record<string, string> = {};
-    for (const chunkId of selectedChunks) {
-      if (targetSpeaker === speakerName) {
-        updates[chunkId] = speakerName;
-      } else {
-        updates[chunkId] = targetSpeaker;
-      }
-    }
     setChunkSpeakerMap((prev) => {
       const next = { ...prev };
-      for (const [chunkId, speaker] of Object.entries(updates)) {
-        if (speaker === speakerName) {
+      for (const chunkId of selectedChunks) {
+        if (!isUnassigned && targetSpeaker === speakerName) {
           delete next[chunkId];
         } else {
-          next[chunkId] = speaker;
+          next[chunkId] = targetSpeaker;
         }
       }
       return next;
@@ -241,10 +265,14 @@ export function SpeakerInspectorDialog({
   const applyMutation = useMutation({
     mutationFn: async () => {
       const updates = chunks
-        .filter((chunk) => getSpeakerForChunk(chunk.chunkId) !== speakerName)
+        .filter((chunk) => {
+          const current = chunkSpeakerMap[chunk.chunkId];
+          if (isUnassigned) return !!current;
+          return current !== undefined && current !== speakerName;
+        })
         .map((chunk) => ({
           chunkId: chunk.chunkId,
-          speakerOverride: getSpeakerForChunk(chunk.chunkId),
+          speakerOverride: chunkSpeakerMap[chunk.chunkId],
         }));
 
       if (updates.length === 0) throw new Error("No changes to apply");
@@ -270,18 +298,24 @@ export function SpeakerInspectorDialog({
     },
   });
 
+  const dialogTitle = isUnassigned ? "Unassigned Dialogue" : `Speaker: ${speakerName}`;
+  const dialogDesc = isUnassigned
+    ? `${chunks.length} dialogue chunk${chunks.length !== 1 ? "s" : ""} without a speaker assignment. Assign speakers individually or in bulk.`
+    : `${chunks.length} chunk${chunks.length !== 1 ? "s" : ""} attributed to this speaker. Reassign individually or select multiple to reassign in bulk.`;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2" data-testid="text-speaker-dialog-title">
-            <Users className="h-5 w-5 text-primary" />
-            Speaker: {speakerName}
+            {isUnassigned ? (
+              <AlertTriangle className="h-5 w-5 text-yellow-500" />
+            ) : (
+              <Users className="h-5 w-5 text-primary" />
+            )}
+            {dialogTitle}
           </DialogTitle>
-          <DialogDescription>
-            {chunks.length} chunk{chunks.length !== 1 ? "s" : ""} attributed to this speaker.
-            Reassign individually or select multiple to reassign in bulk.
-          </DialogDescription>
+          <DialogDescription>{dialogDesc}</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center gap-2 text-sm">
@@ -337,8 +371,9 @@ export function SpeakerInspectorDialog({
         <div className="flex-1 overflow-y-auto space-y-2 pr-1" data-testid="speaker-chunks-list">
           {chunks.map((chunk, idx) => {
             const currentSpeaker = getSpeakerForChunk(chunk.chunkId);
-            const isChanged = currentSpeaker !== speakerName;
+            const isChanged = isUnassigned ? !!chunkSpeakerMap[chunk.chunkId] : (chunkSpeakerMap[chunk.chunkId] !== undefined && chunkSpeakerMap[chunk.chunkId] !== speakerName);
             const isNewRow = chunk.chunkId in newRowSpeakerNames;
+            const isDialogue = chunk.segmentType === "dialogue";
 
             return (
               <div
@@ -363,16 +398,22 @@ export function SpeakerInspectorDialog({
                         <Badge variant="secondary" className="text-xs">{chunk.emotion}</Badge>
                       )}
                       {isChanged && (
-                        <Badge className="text-xs bg-yellow-500 text-white">→ {currentSpeaker}</Badge>
+                        <Badge className="text-xs bg-yellow-500 text-white">\u2192 {currentSpeaker}</Badge>
                       )}
                     </div>
                     <div className="text-sm leading-relaxed">
                       {chunk.contextBefore && (
-                        <span className="text-muted-foreground/60">{chunk.contextBefore} </span>
+                        <span className="text-muted-foreground/60">
+                          {wrapInQuotes(chunk.contextBefore.text, chunk.contextBefore.isDialogue)}{" "}
+                        </span>
                       )}
-                      <span className="bg-primary/15 rounded px-0.5 font-medium">{chunk.text}</span>
+                      <span className="bg-primary/15 rounded px-0.5 font-medium">
+                        {wrapInQuotes(chunk.text, isDialogue)}
+                      </span>
                       {chunk.contextAfter && (
-                        <span className="text-muted-foreground/60"> {chunk.contextAfter}</span>
+                        <span className="text-muted-foreground/60">
+                          {" "}{wrapInQuotes(chunk.contextAfter.text, chunk.contextAfter.isDialogue)}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -403,13 +444,28 @@ export function SpeakerInspectorDialog({
                       </div>
                     ) : (
                       <Select
-                        value={currentSpeaker}
-                        onValueChange={(val) => handleRowSpeakerChange(chunk.chunkId, val)}
+                        value={currentSpeaker || "__unset__"}
+                        onValueChange={(val) => {
+                          if (val === "__unset__") {
+                            if (isUnassigned) {
+                              setChunkSpeakerMap((prev) => {
+                                const next = { ...prev };
+                                delete next[chunk.chunkId];
+                                return next;
+                              });
+                            }
+                            return;
+                          }
+                          handleRowSpeakerChange(chunk.chunkId, val);
+                        }}
                       >
                         <SelectTrigger className="w-[140px] h-8 text-xs" data-testid={`select-row-speaker-${idx}`}>
-                          <SelectValue />
+                          <SelectValue placeholder="Assign speaker..." />
                         </SelectTrigger>
                         <SelectContent>
+                          {isUnassigned && (
+                            <SelectItem value="__unset__">Unassigned</SelectItem>
+                          )}
                           {allAvailableSpeakers.map((s) => (
                             <SelectItem key={s} value={s}>{s}</SelectItem>
                           ))}
@@ -425,7 +481,9 @@ export function SpeakerInspectorDialog({
 
           {chunks.length === 0 && (
             <div className="text-center text-muted-foreground py-8">
-              No chunks found for this speaker.
+              {isUnassigned
+                ? "All dialogue chunks have speakers assigned."
+                : "No chunks found for this speaker."}
             </div>
           )}
         </div>
