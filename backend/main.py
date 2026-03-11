@@ -2156,6 +2156,65 @@ async def update_chunk(project_id: str, chunk_id: str, request: UpdateChunkReque
         db.close()
 
 
+class BatchChunkUpdate(BaseModel):
+    chunkId: str
+    speakerOverride: Optional[str] = None
+
+class BatchChunkUpdateRequest(BaseModel):
+    updates: list[BatchChunkUpdate]
+
+@app.post("/projects/{project_id}/chunks/batch-update")
+async def batch_update_chunks(project_id: str, request: BatchChunkUpdateRequest):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        chunk_ids = [u.chunkId for u in request.updates]
+        chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
+            ProjectChunk.id.in_(chunk_ids),
+            ProjectChapter.project_id == project_id
+        ).all()
+
+        chunk_map = {c.id: c for c in chunks}
+        updated = 0
+
+        for update in request.updates:
+            chunk = chunk_map.get(update.chunkId)
+            if not chunk:
+                continue
+            if update.speakerOverride is not None:
+                chunk.speaker_override = update.speakerOverride if update.speakerOverride != "" else None
+            updated += 1
+
+        project.updated_at = datetime.utcnow()
+        db.commit()
+
+        all_chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
+            ProjectChapter.project_id == project_id
+        ).all()
+        speakers_set = set()
+        for c in all_chunks:
+            effective = c.speaker_override or c.speaker
+            if effective:
+                speakers_set.add(effective)
+
+        existing_speakers = json.loads(project.speakers_json) if project.speakers_json else {}
+        new_speakers = {}
+        for sp in speakers_set:
+            if sp in existing_speakers:
+                new_speakers[sp] = existing_speakers[sp]
+            else:
+                new_speakers[sp] = {"name": sp, "voiceSampleId": None, "pitchOffset": 0, "speedFactor": 1.0}
+        project.speakers_json = json.dumps(new_speakers)
+        db.commit()
+
+        return {"success": True, "updatedChunks": updated, "speakers": list(speakers_set)}
+    finally:
+        db.close()
+
+
 class MergeSpeakersRequest(BaseModel):
     fromSpeaker: str
     toSpeaker: str
