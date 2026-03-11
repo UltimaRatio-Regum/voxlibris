@@ -66,7 +66,7 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
 
   const allVoices = [
     ...voiceSamples.map((v) => ({ id: v.id, label: v.name })),
-    ...libraryVoices.map((v) => ({ id: v.id, label: v.name })),
+    ...libraryVoices.map((v) => ({ id: `library:${v.id}`, label: v.name })),
   ];
 
   const audioFiles = (project.audioFiles || []).filter((af) => {
