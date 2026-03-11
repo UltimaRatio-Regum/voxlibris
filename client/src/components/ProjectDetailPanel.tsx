@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Wand2, Save, Book, Layers, FileText, Type, Download, Upload, X, Image } from "lucide-react";
+import { Wand2, Save, Book, Layers, FileText, Type, Download, Upload, X, Image, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ProjectAudioList } from "@/components/ProjectAudioList";
+import { SpeakerInspectorDialog } from "@/components/SpeakerInspectorDialog";
 import { TTS_ENGINES } from "@/lib/tts-engines";
 import type { TreeSelection } from "@/components/ProjectTree";
 import type {
@@ -30,6 +31,7 @@ import type {
   LibraryVoice,
   EdgeVoice,
   OutputFormat,
+  SpeakerConfig,
 } from "@shared/schema";
 
 const CANONICAL_EMOTIONS = [
@@ -190,6 +192,43 @@ function ProjectSettingsPanel({
   const [metaYear, setMetaYear] = useState(project.metaYear || "");
   const [metaDescription, setMetaDescription] = useState(project.metaDescription || "");
   const [isExporting, setIsExporting] = useState(false);
+  const [inspectedSpeaker, setInspectedSpeaker] = useState<string | null>(null);
+
+  const allDetectedSpeakers = useMemo(() => {
+    const speakers = new Set<string>();
+    for (const ch of project.chapters || []) {
+      for (const sec of ch.sections || []) {
+        for (const chunk of sec.chunks || []) {
+          const s = chunk.speakerOverride || chunk.speaker;
+          if (s) speakers.add(s);
+        }
+      }
+    }
+    return Array.from(speakers).sort();
+  }, [project]);
+
+  const parsedSpeakerConfigs: Record<string, SpeakerConfig> = useMemo(() => {
+    try {
+      return project.speakersJson ? JSON.parse(project.speakersJson) : {};
+    } catch {
+      return {};
+    }
+  }, [project.speakersJson]);
+
+  const [speakerConfigs, setSpeakerConfigs] = useState<Record<string, SpeakerConfig>>({});
+
+  const initSpeakerConfigs = () => {
+    const configs: Record<string, SpeakerConfig> = {};
+    for (const name of allDetectedSpeakers) {
+      configs[name] = parsedSpeakerConfigs[name] || {
+        name,
+        voiceSampleId: null,
+        pitchOffset: 0,
+        speedFactor: 1.0,
+      };
+    }
+    return configs;
+  };
 
   useEffect(() => {
     setTtsEngine(project.ttsEngine || "edge-tts");
@@ -203,7 +242,12 @@ function ProjectSettingsPanel({
     setMetaGenre(project.metaGenre || "");
     setMetaYear(project.metaYear || "");
     setMetaDescription(project.metaDescription || "");
+    setSpeakerConfigs(initSpeakerConfigs());
   }, [project.id]);
+
+  useEffect(() => {
+    setSpeakerConfigs(initSpeakerConfigs());
+  }, [allDetectedSpeakers.join(","), project.speakersJson]);
 
   useEffect(() => {
     if (!baseVoiceId) {
@@ -227,6 +271,7 @@ function ProjectSettingsPanel({
         metaGenre: metaGenre || null,
         metaYear: metaYear || null,
         metaDescription: metaDescription || null,
+        speakersJson: JSON.stringify(speakerConfigs),
       });
     },
     onSuccess: () => {
@@ -283,6 +328,7 @@ function ProjectSettingsPanel({
         metaGenre: metaGenre || null,
         metaYear: metaYear || null,
         metaDescription: metaDescription || null,
+        speakersJson: JSON.stringify(speakerConfigs),
       });
 
       const res = await fetch(`/api/projects/${project.id}/export?format=${outputFormat}`);
@@ -413,6 +459,72 @@ function ProjectSettingsPanel({
           />
         </div>
       </div>
+
+      {allDetectedSpeakers.length > 0 && (
+        <>
+          <Separator />
+
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold flex items-center gap-1.5">
+              <Users className="h-4 w-4" />
+              Speaker Voices
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Assign voices to detected speakers. Click a name to inspect their quotes.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {allDetectedSpeakers.map((name) => {
+              const config = speakerConfigs[name] || { name, voiceSampleId: null, pitchOffset: 0, speedFactor: 1.0 };
+              return (
+                <div key={name} className="rounded-lg border p-3 space-y-2" data-testid={`speaker-config-${name}`}>
+                  <button
+                    type="button"
+                    onClick={() => setInspectedSpeaker(name)}
+                    className="text-sm font-medium text-primary hover:underline cursor-pointer"
+                    data-testid={`button-inspect-speaker-${name}`}
+                  >
+                    {name}
+                  </button>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Voice</Label>
+                    <Select
+                      value={config.voiceSampleId || "__narrator__"}
+                      onValueChange={(v) =>
+                        setSpeakerConfigs((prev) => ({
+                          ...prev,
+                          [name]: { ...config, voiceSampleId: v === "__narrator__" ? null : v },
+                        }))
+                      }
+                    >
+                      <SelectTrigger data-testid={`select-speaker-voice-${name}`}>
+                        <SelectValue placeholder="Use narrator default" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__narrator__">Use narrator default</SelectItem>
+                        {allVoices.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <SpeakerInspectorDialog
+            open={!!inspectedSpeaker}
+            onOpenChange={(open) => { if (!open) setInspectedSpeaker(null); }}
+            speakerName={inspectedSpeaker || ""}
+            project={project}
+            allSpeakers={allDetectedSpeakers}
+            onMergeComplete={onRefresh}
+          />
+        </>
+      )}
 
       <Separator />
 

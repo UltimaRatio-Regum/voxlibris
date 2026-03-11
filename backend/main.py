@@ -2155,6 +2155,58 @@ async def update_chunk(project_id: str, chunk_id: str, request: UpdateChunkReque
         db.close()
 
 
+class MergeSpeakersRequest(BaseModel):
+    fromSpeaker: str
+    toSpeaker: str
+
+
+@app.post("/projects/{project_id}/speakers/merge")
+async def merge_speakers(project_id: str, request: MergeSpeakersRequest):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
+            ProjectChapter.project_id == project_id
+        ).all()
+
+        updated = 0
+        for chunk in chunks:
+            effective = chunk.speaker_override or chunk.speaker
+            if effective == request.fromSpeaker:
+                if chunk.speaker_override:
+                    chunk.speaker_override = request.toSpeaker
+                else:
+                    chunk.speaker = request.toSpeaker
+                updated += 1
+
+        speakers = json.loads(project.speakers_json) if project.speakers_json else {}
+        if request.fromSpeaker in speakers:
+            if request.toSpeaker not in speakers:
+                speakers[request.toSpeaker] = speakers[request.fromSpeaker]
+            del speakers[request.fromSpeaker]
+            project.speakers_json = json.dumps(speakers)
+
+        project.updated_at = datetime.utcnow()
+        db.commit()
+
+        remaining_speakers = set()
+        for chunk in chunks:
+            effective = chunk.speaker_override or chunk.speaker
+            if effective:
+                remaining_speakers.add(effective)
+
+        return {
+            "success": True,
+            "updatedChunks": updated,
+            "speakers": sorted(remaining_speakers),
+        }
+    finally:
+        db.close()
+
+
 @app.post("/projects/{project_id}/segment")
 async def segment_project(project_id: str):
     db = get_db_session()
