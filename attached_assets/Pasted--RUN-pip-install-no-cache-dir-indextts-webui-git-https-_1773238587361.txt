@@ -1,0 +1,37 @@
+
+--> RUN pip install --no-cache-dir "indextts[webui] @ git+https://github.com/index-tts/index-tts.git@main"
+Collecting indextts@ git+https://github.com/index-tts/index-tts.git@main (from indextts[webui]@ git+https://github.com/index-tts/index-tts.git@main)
+  Cloning https://github.com/index-tts/index-tts.git (to revision main) to /tmp/pip-install-xamacxh9/indextts_0627fd4990094554b147270006bf59bc
+  Running command git clone --filter=blob:none --quiet https://github.com/index-tts/index-tts.git /tmp/pip-install-xamacxh9/indextts_0627fd4990094554b147270006bf59bc
+  Downloading examples/emo_hate.wav (145 KB)
+  Error downloading object: examples/emo_hate.wav (89e6e7e): Smudge error: Error downloading examples/emo_hate.wav (89e6e7eee1a28303776e9cf43971e9505529bd0e669f5fcf47f4d1370f9187c4): batch response: This repository exceeded its LFS budget. The account responsible for the budget should increase it to restore access.
+
+  Errors logged to '/tmp/pip-install-xamacxh9/indextts_0627fd4990094554b147270006bf59bc/.git/lfs/logs/20260311T140511.943373622.log'.
+  Use `git lfs logs last` to view the log.
+  error: external filter 'git-lfs filter-process' failed
+  fatal: examples/emo_hate.wav: smudge filter lfs failed
+  warning: Clone succeeded, but checkout failed.
+  You can inspect what was checked out with 'git status'
+  and retry with 'git restore --source=HEAD :/'
+
+  error: subprocess-exited-with-error
+  
+  × git clone --filter=blob:none --quiet https://github.com/index-tts/index-tts.git /tmp/pip-install-xamacxh9/indextts_0627fd4990094554b147270006bf59bc did not run successfully.
+  │ exit code: 128
+  ╰─> See above for output.
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+error: subprocess-exited-with-error
+
+× git clone --filter=blob:none --quiet https://github.com/index-tts/index-tts.git /tmp/pip-install-xamacxh9/indextts_0627fd4990094554b147270006bf59bc did not run successfully.
+│ exit code: 128
+╰─> See above for output.
+
+note: This error originates from a subprocess, and is likely not a problem with pip.
+
+[notice] A new release of pip is available: 24.0 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
+
+--> ERROR: process "/bin/sh -c pip install --no-cache-dir \"indextts[webui] @ git+https://github.com/index-tts/index-tts.git@main\"" did not complete successfully: exit code: 1
+
+ 
