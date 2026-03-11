@@ -1,9 +1,22 @@
-import { useQuery } from "@tanstack/react-query";
-import { Book, Calendar, Layers, FileText, ChevronRight, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Book, Calendar, Layers, FileText, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
+import { useToast } from "@/hooks/use-toast";
 import type { ProjectListItem, ProjectData } from "@shared/schema";
 
 interface ProjectsListPanelProps {
@@ -20,9 +33,32 @@ const statusColors: Record<string, string> = {
 };
 
 export function ProjectsListPanel({ onSelectProject }: ProjectsListPanelProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<ProjectListItem | null>(null);
+
   const { data: projects = [], isLoading } = useQuery<ProjectListItem[]>({
     queryKey: ["/api/projects"],
     refetchInterval: 5000,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Project deleted" });
+      setDeleteTarget(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to delete project", description: error.message, variant: "destructive" });
+      setDeleteTarget(null);
+    },
   });
 
   const handleProjectCreated = (project: ProjectData) => {
@@ -90,11 +126,23 @@ export function ProjectsListPanel({ onSelectProject }: ProjectsListPanelProps) {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   <Badge variant="outline" className={statusColors[project.status] || ""}>
                     {project.status === "segmenting" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                     {project.status}
                   </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteTarget(project);
+                    }}
+                    data-testid={`button-delete-project-${project.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </CardContent>
@@ -102,6 +150,28 @@ export function ProjectsListPanel({ onSelectProject }: ProjectsListPanelProps) {
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{deleteTarget?.title}" and all its chapters, sections, chunks, and generated audio. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              disabled={deleteMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
