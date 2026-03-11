@@ -289,6 +289,9 @@ export const projectAudioFileSchema = z.object({
 });
 export type ProjectAudioFile = z.infer<typeof projectAudioFileSchema>;
 
+export const outputFormatSchema = z.enum(["mp3", "mp3-chapters", "m4b"]);
+export type OutputFormat = z.infer<typeof outputFormatSchema>;
+
 export const projectSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -301,6 +304,13 @@ export const projectSchema = z.object({
   sourceType: z.string(),
   sourceFilename: z.string().nullable(),
   errorMessage: z.string().nullable(),
+  outputFormat: outputFormatSchema.default("mp3"),
+  metaAuthor: z.string().nullable(),
+  metaNarrator: z.string().nullable(),
+  metaGenre: z.string().nullable(),
+  metaYear: z.string().nullable(),
+  metaDescription: z.string().nullable(),
+  hasCoverImage: z.boolean().default(false),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   chapters: z.array(projectChapterSchema).optional(),
@@ -332,6 +342,12 @@ export const updateProjectSettingsSchema = z.object({
   exaggeration: z.number().min(0).max(1).optional(),
   pauseDuration: z.number().min(0).max(3000).optional(),
   speakersJson: z.string().nullable().optional(),
+  outputFormat: outputFormatSchema.optional(),
+  metaAuthor: z.string().nullable().optional(),
+  metaNarrator: z.string().nullable().optional(),
+  metaGenre: z.string().nullable().optional(),
+  metaYear: z.string().nullable().optional(),
+  metaDescription: z.string().nullable().optional(),
 });
 export type UpdateProjectSettings = z.infer<typeof updateProjectSettingsSchema>;
 

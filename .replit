@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["antlr", "cargo", "ffmpeg", "ffmpeg-full", "jre", "libiconv", "libsndfile", "libxcrypt", "pkg-config", "rubberband", "rustc", "xcodebuild", "xsimd", "zlib", "p7zip", "vim", "rsync"]
+packages = ["antlr", "cargo", "ffmpeg", "ffmpeg-full", "jre", "libiconv", "libsndfile", "libxcrypt", "p7zip", "pkg-config", "rsync", "rubberband", "rustc", "vim", "xcodebuild", "xsimd", "zlib"]
 
 [[ports]]
 localPort = 5000

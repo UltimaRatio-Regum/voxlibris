@@ -12,6 +12,7 @@ dependencies = [
     "gradio-client>=2.0.3",
     "httpx>=0.28.1",
     "lxml>=6.0.2",
+    "mutagen>=1.47.0",
     "numpy>=2.4.1",
     "psycopg2-binary>=2.9.11",
     "pydantic>=2.12.5",

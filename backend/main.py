@@ -1787,6 +1787,12 @@ class UpdateProjectSettingsRequest(BaseModel):
     exaggeration: Optional[float] = None
     pauseDuration: Optional[float] = None
     speakersJson: Optional[str] = None
+    outputFormat: Optional[str] = None
+    metaAuthor: Optional[str] = None
+    metaNarrator: Optional[str] = None
+    metaGenre: Optional[str] = None
+    metaYear: Optional[str] = None
+    metaDescription: Optional[str] = None
 
 
 class UpdateChapterRequest(BaseModel):
@@ -1916,6 +1922,13 @@ def _serialize_project_full(project: Project, db) -> dict:
         "sourceType": project.source_type,
         "sourceFilename": project.source_filename,
         "errorMessage": project.error_message,
+        "outputFormat": project.output_format or "mp3",
+        "metaAuthor": project.meta_author,
+        "metaNarrator": project.meta_narrator,
+        "metaGenre": project.meta_genre,
+        "metaYear": project.meta_year,
+        "metaDescription": project.meta_description,
+        "hasCoverImage": project.meta_cover_image is not None and len(project.meta_cover_image) > 0,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
         "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
         "chapters": chapters_data,
@@ -2041,6 +2054,18 @@ async def update_project(project_id: str, request: UpdateProjectSettingsRequest)
             project.pause_duration = request.pauseDuration
         if request.speakersJson is not None:
             project.speakers_json = request.speakersJson
+        if request.outputFormat is not None:
+            project.output_format = request.outputFormat
+        if request.metaAuthor is not None:
+            project.meta_author = request.metaAuthor
+        if request.metaNarrator is not None:
+            project.meta_narrator = request.metaNarrator
+        if request.metaGenre is not None:
+            project.meta_genre = request.metaGenre
+        if request.metaYear is not None:
+            project.meta_year = request.metaYear
+        if request.metaDescription is not None:
+            project.meta_description = request.metaDescription
 
         project.updated_at = datetime.utcnow()
         db.commit()
@@ -2316,6 +2341,150 @@ async def get_project_audio(project_id: str, audio_file_id: str):
 
         media_type = "audio/mpeg" if af.format == "mp3" else "audio/wav"
         return Response(content=af.audio_data, media_type=media_type)
+    finally:
+        db.close()
+
+
+@app.post("/projects/{project_id}/cover")
+async def upload_cover_image(project_id: str, file: UploadFile = File(...)):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Cover image must be under 5MB")
+
+        project.meta_cover_image = content
+        project.updated_at = datetime.utcnow()
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}/cover")
+async def get_cover_image(project_id: str):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project or not project.meta_cover_image:
+            raise HTTPException(status_code=404, detail="No cover image")
+
+        data = project.meta_cover_image
+        mime = "image/jpeg"
+        if data[:4] == b'\x89PNG':
+            mime = "image/png"
+        elif data[:4] == b'RIFF':
+            mime = "image/webp"
+        return Response(content=data, media_type=mime)
+    finally:
+        db.close()
+
+
+@app.delete("/projects/{project_id}/cover")
+async def delete_cover_image(project_id: str):
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        project.meta_cover_image = None
+        project.updated_at = datetime.utcnow()
+        db.commit()
+        return {"success": True}
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}/export")
+async def export_project(project_id: str, format: str = "mp3"):
+    from backend.audio_export import export_single_mp3, export_mp3_per_chapter, export_m4b
+
+    if format not in ("mp3", "mp3-chapters", "m4b"):
+        raise HTTPException(status_code=400, detail="Invalid format. Use: mp3, mp3-chapters, m4b")
+
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        chapters = db.query(ProjectChapter).filter(
+            ProjectChapter.project_id == project_id
+        ).order_by(ProjectChapter.chapter_index).all()
+
+        chapter_audio = []
+        for ch in chapters:
+            sections = db.query(ProjectSection).filter(
+                ProjectSection.chapter_id == ch.id
+            ).order_by(ProjectSection.section_index).all()
+
+            chunk_ids = []
+            for sec in sections:
+                chunks = db.query(ProjectChunk).filter(
+                    ProjectChunk.section_id == sec.id
+                ).order_by(ProjectChunk.chunk_index).all()
+                chunk_ids.extend([c.id for c in chunks])
+
+            blobs = []
+            for cid in chunk_ids:
+                af = db.query(ProjectAudioFile).filter(
+                    ProjectAudioFile.project_id == project_id,
+                    ProjectAudioFile.scope_type == "chunk",
+                    ProjectAudioFile.scope_id == cid,
+                ).order_by(ProjectAudioFile.created_at.desc()).first()
+                if af and af.audio_data:
+                    blobs.append(af.audio_data)
+
+            chapter_audio.append((ch.title or f"Chapter {ch.chapter_index + 1}", blobs))
+
+        total_blobs = sum(len(blobs) for _, blobs in chapter_audio)
+        if total_blobs == 0:
+            raise HTTPException(status_code=400, detail="No audio generated yet. Generate audio before exporting.")
+
+        cover = project.meta_cover_image if project.meta_cover_image else None
+        pause_ms = int(project.pause_duration) if project.pause_duration else 500
+
+        kwargs = dict(
+            chapter_audio=chapter_audio,
+            title=project.title,
+            pause_ms=pause_ms,
+            author=project.meta_author,
+            narrator=project.meta_narrator,
+            genre=project.meta_genre,
+            year=project.meta_year,
+            description=project.meta_description,
+            cover_image=cover,
+        )
+
+        safe_title = "".join(c for c in project.title if c.isalnum() or c in " _-").strip()
+
+        if format == "mp3":
+            data = export_single_mp3(**kwargs)
+            return Response(
+                content=data,
+                media_type="audio/mpeg",
+                headers={"Content-Disposition": f'attachment; filename="{safe_title}.mp3"'},
+            )
+        elif format == "mp3-chapters":
+            data = export_mp3_per_chapter(**kwargs)
+            return Response(
+                content=data,
+                media_type="application/zip",
+                headers={"Content-Disposition": f'attachment; filename="{safe_title} - Chapters.zip"'},
+            )
+        elif format == "m4b":
+            data = export_m4b(**kwargs)
+            return Response(
+                content=data,
+                media_type="audio/x-m4b",
+                headers={"Content-Disposition": f'attachment; filename="{safe_title}.m4b"'},
+            )
+
     finally:
         db.close()
 

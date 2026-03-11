@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Wand2, Save, Book, Layers, FileText, Type } from "lucide-react";
+import { Wand2, Save, Book, Layers, FileText, Type, Download, Upload, X, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -15,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ProjectAudioList } from "@/components/ProjectAudioList";
 import { TTS_ENGINES } from "@/lib/tts-engines";
 import type { TreeSelection } from "@/components/ProjectTree";
@@ -28,6 +29,7 @@ import type {
   VoiceSample,
   LibraryVoice,
   EdgeVoice,
+  OutputFormat,
 } from "@shared/schema";
 
 const CANONICAL_EMOTIONS = [
@@ -171,25 +173,46 @@ function ProjectSettingsPanel({
   onRefresh: () => void;
 }) {
   const { toast } = useToast();
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
   const [ttsEngine, setTtsEngine] = useState(project.ttsEngine || "edge-tts");
   const [narratorVoice, setNarratorVoice] = useState(project.narratorVoiceId || "");
   const [exaggeration, setExaggeration] = useState(project.exaggeration ?? 0.5);
   const [pauseDuration, setPauseDuration] = useState(project.pauseDuration ?? 500);
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>(project.outputFormat || "mp3");
+  const [metaAuthor, setMetaAuthor] = useState(project.metaAuthor || "");
+  const [metaNarrator, setMetaNarrator] = useState(project.metaNarrator || "");
+  const [metaGenre, setMetaGenre] = useState(project.metaGenre || "");
+  const [metaYear, setMetaYear] = useState(project.metaYear || "");
+  const [metaDescription, setMetaDescription] = useState(project.metaDescription || "");
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     setTtsEngine(project.ttsEngine || "edge-tts");
     setNarratorVoice(project.narratorVoiceId || "");
     setExaggeration(project.exaggeration ?? 0.5);
     setPauseDuration(project.pauseDuration ?? 500);
+    setOutputFormat(project.outputFormat || "mp3");
+    setMetaAuthor(project.metaAuthor || "");
+    setMetaNarrator(project.metaNarrator || "");
+    setMetaGenre(project.metaGenre || "");
+    setMetaYear(project.metaYear || "");
+    setMetaDescription(project.metaDescription || "");
   }, [project.id]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
-        ttsEngine: ttsEngine,
+        ttsEngine,
         narratorVoiceId: narratorVoice || null,
         exaggeration,
         pauseDuration,
+        outputFormat,
+        metaAuthor: metaAuthor || null,
+        metaNarrator: metaNarrator || null,
+        metaGenre: metaGenre || null,
+        metaYear: metaYear || null,
+        metaDescription: metaDescription || null,
       });
     },
     onSuccess: () => {
@@ -200,6 +223,75 @@ function ProjectSettingsPanel({
       toast({ title: "Failed to save", description: error.message, variant: "destructive" });
     },
   });
+
+  const coverUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/projects/${project.id}/cover`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Cover image uploaded" });
+      onRefresh();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const coverDeleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/projects/${project.id}/cover`);
+    },
+    onSuccess: () => {
+      toast({ title: "Cover image removed" });
+      onRefresh();
+    },
+  });
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await apiRequest("PATCH", `/api/projects/${project.id}`, {
+        ttsEngine,
+        narratorVoiceId: narratorVoice || null,
+        exaggeration,
+        pauseDuration,
+        outputFormat,
+        metaAuthor: metaAuthor || null,
+        metaNarrator: metaNarrator || null,
+        metaGenre: metaGenre || null,
+        metaYear: metaYear || null,
+        metaDescription: metaDescription || null,
+      });
+
+      const res = await fetch(`/api/projects/${project.id}/export?format=${outputFormat}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: "Export failed" }));
+        throw new Error(errData.detail || "Export failed");
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="(.+?)"/);
+      const filename = match ? match[1] : `${project.title}.${outputFormat === "mp3-chapters" ? "zip" : outputFormat}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Export complete" });
+    } catch (error: any) {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const chapters = project.chapters || [];
   const totalChunks = chapters.reduce(
@@ -275,7 +367,141 @@ function ProjectSettingsPanel({
             data-testid="slider-pause"
           />
         </div>
+      </div>
 
+      <Separator />
+
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold">Output Format</h3>
+        <p className="text-xs text-muted-foreground">Choose how the final audiobook will be exported</p>
+      </div>
+
+      <div className="grid gap-4">
+        <Select value={outputFormat} onValueChange={(v) => setOutputFormat(v as OutputFormat)}>
+          <SelectTrigger data-testid="select-output-format">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="mp3">Single MP3 file</SelectItem>
+            <SelectItem value="mp3-chapters">MP3 per chapter (ZIP)</SelectItem>
+            <SelectItem value="m4b">M4B Audiobook (with chapters)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Separator />
+
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold">Audiobook Metadata</h3>
+        <p className="text-xs text-muted-foreground">Embedded in the exported file as ID3/MP4 tags</p>
+      </div>
+
+      <div className="grid gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Author</Label>
+            <Input
+              value={metaAuthor}
+              onChange={(e) => setMetaAuthor(e.target.value)}
+              placeholder="Author name"
+              data-testid="input-meta-author"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Narrator</Label>
+            <Input
+              value={metaNarrator}
+              onChange={(e) => setMetaNarrator(e.target.value)}
+              placeholder="Narrator name"
+              data-testid="input-meta-narrator"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Genre</Label>
+            <Input
+              value={metaGenre}
+              onChange={(e) => setMetaGenre(e.target.value)}
+              placeholder="e.g. Fiction, Sci-Fi"
+              data-testid="input-meta-genre"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Year</Label>
+            <Input
+              value={metaYear}
+              onChange={(e) => setMetaYear(e.target.value)}
+              placeholder="e.g. 2025"
+              data-testid="input-meta-year"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Description</Label>
+          <Textarea
+            value={metaDescription}
+            onChange={(e) => setMetaDescription(e.target.value)}
+            placeholder="Brief description of the audiobook..."
+            rows={3}
+            data-testid="input-meta-description"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label className="text-xs">Cover Image</Label>
+          <div className="flex items-center gap-3">
+            {project.hasCoverImage ? (
+              <div className="relative">
+                <img
+                  src={`/api/projects/${project.id}/cover`}
+                  alt="Cover"
+                  className="w-16 h-16 rounded object-cover border"
+                  data-testid="img-cover-preview"
+                />
+                <button
+                  onClick={() => coverDeleteMutation.mutate()}
+                  className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 flex items-center justify-center text-xs"
+                  data-testid="button-remove-cover"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="w-16 h-16 rounded border border-dashed flex items-center justify-center text-muted-foreground">
+                <Image className="h-6 w-6" />
+              </div>
+            )}
+            <div>
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) coverUploadMutation.mutate(file);
+                }}
+                data-testid="input-cover-file"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => coverInputRef.current?.click()}
+                disabled={coverUploadMutation.isPending}
+                data-testid="button-upload-cover"
+              >
+                <Upload className="h-3.5 w-3.5 mr-1" />
+                {coverUploadMutation.isPending ? "Uploading..." : "Upload Cover"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
         <Button
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
@@ -283,6 +509,16 @@ function ProjectSettingsPanel({
         >
           <Save className="h-4 w-4 mr-2" />
           {saveMutation.isPending ? "Saving..." : "Save Settings"}
+        </Button>
+
+        <Button
+          variant="outline"
+          onClick={handleExport}
+          disabled={isExporting}
+          data-testid="button-export"
+        >
+          <Download className="h-4 w-4 mr-2" />
+          {isExporting ? "Exporting..." : "Export"}
         </Button>
       </div>
     </div>

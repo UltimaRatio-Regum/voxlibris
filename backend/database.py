@@ -197,6 +197,13 @@ class Project(Base):
     source_type = Column(String, nullable=False, default="text")
     source_filename = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)
+    output_format = Column(String, nullable=False, default="mp3")
+    meta_author = Column(String, nullable=True)
+    meta_narrator = Column(String, nullable=True)
+    meta_genre = Column(String, nullable=True)
+    meta_year = Column(String, nullable=True)
+    meta_description = Column(Text, nullable=True)
+    meta_cover_image = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
