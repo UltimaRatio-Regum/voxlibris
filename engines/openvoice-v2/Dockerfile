@@ -29,6 +29,7 @@ RUN pip install --no-cache-dir \
     tqdm tensorboard loguru \
     faster-whisper wavmark whisper-timestamped
 RUN python -m unidic download || true
+RUN python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng', download_dir='/usr/local/nltk_data'); nltk.download('averaged_perceptron_tagger', download_dir='/usr/local/nltk_data'); nltk.download('cmudict', download_dir='/usr/local/nltk_data')"
 
 RUN wget -q https://myshell-public-repo-host.s3.amazonaws.com/openvoice/checkpoints_v2_0417.zip -O /tmp/ckpt.zip && \
     unzip -q /tmp/ckpt.zip -d /tmp/ckpt_extract && \
