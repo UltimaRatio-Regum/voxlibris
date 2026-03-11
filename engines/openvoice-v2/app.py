@@ -394,12 +394,15 @@ async def convert_text_to_speech(request: Request):
         return Response(content=wav_bytes, media_type="audio/wav")
 
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
         logger.exception("TTS generation failed")
         return JSONResponse(
             status_code=500,
             content={
-                "error": "Audio generation failed",
+                "error": f"Audio generation failed: {type(e).__name__}: {e}",
                 "error_code": "GENERATION_FAILED",
+                "traceback": tb,
             }
         )
     finally:
