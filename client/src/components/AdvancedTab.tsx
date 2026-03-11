@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,14 @@ export function AdvancedTab() {
   const { data: registeredEngines = [] } = useQuery<RegisteredEngine[]>({
     queryKey: ["/api/tts-engines"],
   });
+
+  useEffect(() => {
+    if (!baseVoiceId) {
+      const engine = registeredEngines.find((e) => e.engine_id === ttsEngine);
+      const firstBase = engine?.base_voices?.[0]?.id;
+      if (firstBase) setBaseVoiceId(firstBase);
+    }
+  }, [ttsEngine, registeredEngines, baseVoiceId]);
 
   const detectedSpeakers = Array.from(new Set(segments.filter((s) => s.speaker).map((s) => s.speaker!)));
 

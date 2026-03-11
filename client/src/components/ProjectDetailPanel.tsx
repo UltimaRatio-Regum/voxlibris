@@ -205,6 +205,14 @@ function ProjectSettingsPanel({
     setMetaDescription(project.metaDescription || "");
   }, [project.id]);
 
+  useEffect(() => {
+    if (!baseVoiceId) {
+      const engine = registeredEngines.find((e: any) => (e.engine_id || e.id) === ttsEngine);
+      const firstBase = engine?.base_voices?.[0]?.id;
+      if (firstBase) setBaseVoiceId(firstBase);
+    }
+  }, [ttsEngine, registeredEngines, baseVoiceId]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
@@ -325,7 +333,12 @@ function ProjectSettingsPanel({
       <div className="grid gap-4">
         <div className="space-y-2">
           <Label>TTS Engine</Label>
-          <Select value={ttsEngine} onValueChange={(v) => { setTtsEngine(v); setBaseVoiceId(""); }}>
+          <Select value={ttsEngine} onValueChange={(v) => {
+            setTtsEngine(v);
+            const newEngine = registeredEngines.find((e: any) => (e.engine_id || e.id) === v);
+            const firstBase = newEngine?.base_voices?.[0]?.id || "";
+            setBaseVoiceId(firstBase);
+          }}>
             <SelectTrigger data-testid="select-tts-engine">
               <SelectValue />
             </SelectTrigger>
@@ -359,7 +372,7 @@ function ProjectSettingsPanel({
             <div className="space-y-2">
               <Label>Base Voice / Language</Label>
               <p className="text-xs text-muted-foreground">Controls the language and accent of generated speech</p>
-              <Select value={baseVoiceId || baseVoices[0]?.id || ""} onValueChange={setBaseVoiceId}>
+              <Select value={baseVoiceId} onValueChange={setBaseVoiceId}>
                 <SelectTrigger data-testid="select-base-voice">
                   <SelectValue placeholder="Select base voice..." />
                 </SelectTrigger>

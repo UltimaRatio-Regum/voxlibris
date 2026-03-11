@@ -106,9 +106,6 @@ class RemoteTTSClient:
                 voice_sample_url=v.get("voice_sample_url"),
             ))
 
-        if not base_voices and data.get("supports_voice_cloning") and voices:
-            base_voices = list(voices)
-
         return EngineDetails(
             engine_id=data["engine_id"],
             engine_name=data["engine_name"],

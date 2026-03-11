@@ -240,7 +240,7 @@ export function SpeakerAssignment({
                     Controls the language and accent of generated speech. Used as the foundation when voice cloning is applied.
                   </p>
                   <Select
-                    value={baseVoiceId || registeredBaseVoices[0]?.id || ""}
+                    value={baseVoiceId || ""}
                     onValueChange={(v) => onUpdateBaseVoice?.(v)}
                   >
                     <SelectTrigger data-testid="select-base-voice">
