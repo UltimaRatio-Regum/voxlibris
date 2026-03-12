@@ -1136,7 +1136,8 @@ async def startup_event():
 
 
 def _reset_orphaned_waiting_jobs():
-    """Reset any jobs stuck in WAITING or PROCESSING from a previous process."""
+    """Reset any jobs stuck in WAITING/PROCESSING and re-queue PENDING jobs from a previous process."""
+    from job_runner import start_job_async
     db = get_db_session()
     try:
         orphaned = db.query(TTSJob).filter(
@@ -1148,8 +1149,18 @@ def _reset_orphaned_waiting_jobs():
         if orphaned:
             db.commit()
             logger.info(f"Reset {len(orphaned)} orphaned jobs to pending")
+
+        pending = db.query(TTSJob).filter(
+            TTSJob.status == JobStatus.PENDING.value
+        ).order_by(TTSJob.created_at.asc()).all()
+        pending_ids = [job.id for job in pending]
     finally:
         db.close()
+
+    if pending_ids:
+        logger.info(f"Re-queuing {len(pending_ids)} pending jobs through engine mutex")
+        for job_id in pending_ids:
+            start_job_async(job_id)
 
 
 class CreateJobRequest(BaseModel):
