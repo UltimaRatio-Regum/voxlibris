@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   Clock, Play, Pause, Trash2, X, RefreshCw, CheckCircle, AlertCircle, 
-  Loader2, Download, ChevronDown, ChevronRight, Volume2
+  Loader2, Download, ChevronDown, ChevronRight, Volume2, RotateCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,10 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
 
   const jobs = jobsData?.jobs ?? [];
 
+  const hasFinishedJobs = jobs.some(j => 
+    j.status === "completed" || j.status === "failed" || j.status === "cancelled"
+  );
+
   const { data: segmentsData } = useQuery<{ segments: TTSSegmentStatus[] }>({
     queryKey: ["/api/jobs", expandedJob, "segments"],
     enabled: !!expandedJob,
@@ -56,6 +60,30 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       toast({ title: "Job deleted" });
+    },
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      await apiRequest("POST", `/api/jobs/${jobId}/retry`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Job retrying", description: "Failed segments will be re-processed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Retry failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const clearCompletedMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/jobs/clear-completed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Jobs cleared", description: `Removed ${data.deleted} finished job${data.deleted !== 1 ? 's' : ''}.` });
     },
   });
 
@@ -142,7 +170,26 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
             <RefreshCw className="h-4 w-4" />
             Generation Jobs
           </CardTitle>
-          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          <div className="flex items-center gap-2">
+            {hasFinishedJobs && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => clearCompletedMutation.mutate()}
+                disabled={clearCompletedMutation.isPending}
+                data-testid="clear-completed-jobs"
+                className="text-xs h-7"
+              >
+                {clearCompletedMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3 w-3 mr-1" />
+                )}
+                Clear finished
+              </Button>
+            )}
+            {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -209,6 +256,18 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                       >
                         <Download className="h-3.5 w-3.5 mr-1" />
                         Download
+                      </Button>
+                    )}
+                    {(job.status === "failed" || job.status === "cancelled") && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => retryMutation.mutate(job.id)}
+                        disabled={retryMutation.isPending}
+                        data-testid={`job-retry-${job.id}`}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                        Retry
                       </Button>
                     )}
                     {(job.status === "processing" || job.status === "waiting") && (

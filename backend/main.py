@@ -1234,6 +1234,23 @@ async def get_segment_audio_endpoint(job_id: str, segment_id: str):
     )
 
 
+@app.post("/jobs/clear-completed")
+async def clear_completed_jobs():
+    """Delete all finished jobs (completed, failed, cancelled)."""
+    db = get_db_session()
+    try:
+        finished = db.query(TTSJob).filter(
+            TTSJob.status.in_([JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value])
+        ).all()
+        ids = [j.id for j in finished]
+    finally:
+        db.close()
+
+    for jid in ids:
+        delete_job(jid)
+    return {"deleted": len(ids)}
+
+
 @app.post("/jobs/{job_id}/cancel")
 async def cancel_job_endpoint(job_id: str):
     """Cancel a running job."""
@@ -1243,6 +1260,37 @@ async def cancel_job_endpoint(job_id: str):
     
     cancel_job(job_id)
     return {"status": "cancelled"}
+
+
+@app.post("/jobs/{job_id}/retry")
+async def retry_job_endpoint(job_id: str):
+    """Retry a failed job by resetting failed segments and re-running."""
+    from job_runner import start_job_async
+    db = get_db_session()
+    try:
+        job = db.query(TTSJob).filter(TTSJob.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status not in (JobStatus.FAILED.value, JobStatus.CANCELLED.value):
+            raise HTTPException(status_code=400, detail="Only failed or cancelled jobs can be retried")
+
+        failed_segs = db.query(TTSSegment).filter(
+            TTSSegment.job_id == job_id,
+            TTSSegment.status.in_([SegmentStatus.FAILED.value, SegmentStatus.PENDING.value])
+        ).all()
+        for seg in failed_segs:
+            seg.status = SegmentStatus.PENDING.value
+            seg.error_message = None
+
+        job.status = JobStatus.PENDING.value
+        job.error_message = None
+        job.failed_segments = 0
+        db.commit()
+    finally:
+        db.close()
+
+    start_job_async(job_id)
+    return {"status": "retrying", "jobId": job_id}
 
 
 @app.delete("/jobs/{job_id}")
