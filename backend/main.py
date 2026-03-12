@@ -1855,6 +1855,8 @@ class UpdateProjectSettingsRequest(BaseModel):
     exaggeration: Optional[float] = None
     pauseDuration: Optional[float] = None
     speakersJson: Optional[str] = None
+    narratorEmotion: Optional[str] = None
+    dialogueEmotionMode: Optional[str] = None
     outputFormat: Optional[str] = None
     metaAuthor: Optional[str] = None
     metaNarrator: Optional[str] = None
@@ -1991,6 +1993,8 @@ def _serialize_project_full(project: Project, db) -> dict:
         "exaggeration": project.exaggeration,
         "pauseDuration": project.pause_duration,
         "speakersJson": project.speakers_json,
+        "narratorEmotion": project.narrator_emotion or "auto",
+        "dialogueEmotionMode": project.dialogue_emotion_mode or "per-chunk",
         "sourceType": project.source_type,
         "sourceFilename": project.source_filename,
         "errorMessage": project.error_message,
@@ -2128,6 +2132,10 @@ async def update_project(project_id: str, request: UpdateProjectSettingsRequest)
             project.pause_duration = request.pauseDuration
         if request.speakersJson is not None:
             project.speakers_json = request.speakersJson
+        if request.narratorEmotion is not None:
+            project.narrator_emotion = request.narratorEmotion
+        if request.dialogueEmotionMode is not None:
+            project.dialogue_emotion_mode = request.dialogueEmotionMode
         if request.outputFormat is not None:
             project.output_format = request.outputFormat
         if request.metaAuthor is not None:
@@ -2451,6 +2459,8 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
         speakers = json.loads(project.speakers_json) if project.speakers_json else {}
         exaggeration = project.exaggeration
         pause_duration = project.pause_duration
+        narrator_emotion = project.narrator_emotion or "auto"
+        dialogue_emotion_mode = project.dialogue_emotion_mode or "per-chunk"
 
         from job_manager import create_job
         from job_runner import start_job_async
@@ -2475,6 +2485,8 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "ttsEngine": tts_engine,
                     "narratorVoiceId": narrator_voice_id,
                     "baseVoiceId": base_voice_id,
+                    "narratorEmotion": narrator_emotion,
+                    "dialogueEmotionMode": dialogue_emotion_mode,
                     "projectId": project_id,
                     "scopeType": "chunk",
                     "scopeId": request.scopeId,
@@ -2516,6 +2528,8 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "ttsEngine": tts_engine,
                     "narratorVoiceId": narrator_voice_id,
                     "baseVoiceId": base_voice_id,
+                    "narratorEmotion": narrator_emotion,
+                    "dialogueEmotionMode": dialogue_emotion_mode,
                     "projectId": project_id,
                     "scopeType": "section",
                     "scopeId": section.id,
@@ -2597,6 +2611,8 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                         "ttsEngine": tts_engine,
                         "narratorVoiceId": narrator_voice_id,
                         "baseVoiceId": base_voice_id,
+                        "narratorEmotion": narrator_emotion,
+                        "dialogueEmotionMode": dialogue_emotion_mode,
                         "projectId": project_id,
                         "scopeType": "section",
                         "scopeId": sec.id,

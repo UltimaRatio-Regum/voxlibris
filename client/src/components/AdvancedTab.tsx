@@ -10,7 +10,7 @@ import { SpeakerAssignment } from "@/components/SpeakerAssignment";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { GenerationProgress } from "@/components/GenerationProgress";
 import { SettingsPanel, type RegisteredEngine } from "@/components/SettingsPanel";
-import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse, LibraryVoice, TTSEngine, EdgeVoice } from "@shared/schema";
+import type { TextSegment, VoiceSample, SpeakerConfig, ParseTextResponse, LibraryVoice, TTSEngine, EdgeVoice, NarratorEmotion, DialogueEmotionMode } from "@shared/schema";
 
 export function AdvancedTab() {
   const { toast } = useToast();
@@ -32,6 +32,8 @@ export function AdvancedTab() {
   const [exaggeration, setExaggeration] = useState(0.5);
   const [pauseDuration, setPauseDuration] = useState(500);
   const [ttsEngine, setTTSEngine] = useState<TTSEngine>("edge-tts");
+  const [narratorEmotion, setNarratorEmotion] = useState<NarratorEmotion>("auto");
+  const [dialogueEmotionMode, setDialogueEmotionMode] = useState<DialogueEmotionMode>("per-chunk");
 
   const [generationStatus, setGenerationStatus] = useState<"idle" | "processing" | "completed" | "error">("idle");
   const [progress, setProgress] = useState(0);
@@ -138,6 +140,8 @@ export function AdvancedTab() {
           pauseBetweenSegments: pauseDuration,
           speakers: speakerConfigs,
           ttsEngine,
+          narratorEmotion,
+          dialogueEmotionMode,
         },
       });
 
@@ -417,10 +421,14 @@ export function AdvancedTab() {
             exaggeration={exaggeration}
             pauseDuration={pauseDuration}
             ttsEngine={ttsEngine}
+            narratorEmotion={narratorEmotion}
+            dialogueEmotionMode={dialogueEmotionMode}
             registeredEngines={registeredEngines}
             onExaggerationChange={setExaggeration}
             onPauseDurationChange={setPauseDuration}
             onTTSEngineChange={handleTTSEngineChange}
+            onNarratorEmotionChange={setNarratorEmotion}
+            onDialogueEmotionModeChange={setDialogueEmotionMode}
           />
 
           {segments.length > 0 && (

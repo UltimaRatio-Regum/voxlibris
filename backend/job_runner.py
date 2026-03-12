@@ -10,7 +10,7 @@ import logging
 import threading
 from typing import Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 import numpy as np
 from pydub import AudioSegment
@@ -51,6 +51,59 @@ def _start_next_for_engine(engine: str):
         _engine_busy[engine] = False
 
 
+def _apply_emotion_smoothing(segment_data: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Apply narrator emotion override and dialogue emotion flattening to segments."""
+    narrator_emotion = config.get("narratorEmotion", "auto")
+    dialogue_mode = config.get("dialogueEmotionMode", "per-chunk")
+
+    if narrator_emotion != "auto":
+        for seg in segment_data:
+            if seg.get("type") == "narration":
+                existing = seg.get("sentiment") or {}
+                seg["sentiment"] = {"label": narrator_emotion, "score": existing.get("score", 0.8)}
+
+    if dialogue_mode != "per-chunk":
+        i = 0
+        while i < len(segment_data):
+            seg = segment_data[i]
+            if seg.get("type") != "dialogue" or not seg.get("speaker"):
+                i += 1
+                continue
+            speaker = seg["speaker"]
+            group_start = i
+            j = i + 1
+            while j < len(segment_data):
+                next_seg = segment_data[j]
+                if next_seg.get("type") == "dialogue" and next_seg.get("speaker") == speaker:
+                    j += 1
+                else:
+                    break
+            group_end = j
+
+            if group_end - group_start > 1:
+                if dialogue_mode == "first-chunk":
+                    first_sent = segment_data[group_start].get("sentiment") or {}
+                    first_emotion = first_sent.get("label", "neutral")
+                    for k in range(group_start, group_end):
+                        seg_sent = segment_data[k].get("sentiment") or {}
+                        segment_data[k]["sentiment"] = {"label": first_emotion, "score": seg_sent.get("score", 0.8)}
+                elif dialogue_mode == "word-count-majority":
+                    emotion_words: Counter = Counter()
+                    for k in range(group_start, group_end):
+                        seg_sent = segment_data[k].get("sentiment") or {}
+                        emotion = seg_sent.get("label", "neutral")
+                        word_count = len(segment_data[k].get("text", "").split())
+                        emotion_words[emotion] += word_count
+                    dominant_emotion = emotion_words.most_common(1)[0][0] if emotion_words else "neutral"
+                    for k in range(group_start, group_end):
+                        seg_sent = segment_data[k].get("sentiment") or {}
+                        segment_data[k]["sentiment"] = {"label": dominant_emotion, "score": seg_sent.get("score", 0.8)}
+
+            i = group_end
+
+    return segment_data
+
+
 async def process_job(job_id: str, cancel_token: threading.Event = None):
     """Process a TTS job - generates audio for each segment."""
     logger.info(f"Starting TTS job: {job_id}")
@@ -80,6 +133,8 @@ async def process_job(job_id: str, cancel_token: threading.Event = None):
     finally:
         db.close()
     
+    segment_data = _apply_emotion_smoothing(segment_data, config)
+
     tts_engine = config.get("ttsEngine", "edge-tts")
     narrator_voice_id = config.get("narratorVoiceId")
     base_voice_id = config.get("baseVoiceId")

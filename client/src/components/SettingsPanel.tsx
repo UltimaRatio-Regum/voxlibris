@@ -13,7 +13,31 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { TTS_ENGINES } from "@/lib/tts-engines";
-import type { TTSEngine } from "@shared/schema";
+import type { TTSEngine, NarratorEmotion, DialogueEmotionMode } from "@shared/schema";
+
+const CANONICAL_EMOTIONS: { value: NarratorEmotion; label: string }[] = [
+  { value: "auto", label: "Auto-detect" },
+  { value: "neutral", label: "Neutral" },
+  { value: "happy", label: "Happy" },
+  { value: "sad", label: "Sad" },
+  { value: "angry", label: "Angry" },
+  { value: "fear", label: "Fear" },
+  { value: "disgust", label: "Disgust" },
+  { value: "surprise", label: "Surprise" },
+  { value: "excited", label: "Excited" },
+  { value: "calm", label: "Calm" },
+  { value: "anxious", label: "Anxious" },
+  { value: "hopeful", label: "Hopeful" },
+  { value: "melancholy", label: "Melancholy" },
+  { value: "tender", label: "Tender" },
+  { value: "proud", label: "Proud" },
+];
+
+const DIALOGUE_EMOTION_MODES: { value: DialogueEmotionMode; label: string; description: string }[] = [
+  { value: "per-chunk", label: "Per chunk (default)", description: "Each chunk uses its own detected emotion" },
+  { value: "first-chunk", label: "Use first chunk's emotion", description: "All chunks in a quote inherit the first chunk's emotion" },
+  { value: "word-count-majority", label: "Dominant emotion (by word count)", description: "Uses the emotion associated with the most words" },
+];
 
 export interface RegisteredEngine {
   id: number;
@@ -31,20 +55,28 @@ interface SettingsPanelProps {
   exaggeration: number;
   pauseDuration: number;
   ttsEngine: TTSEngine;
+  narratorEmotion?: NarratorEmotion;
+  dialogueEmotionMode?: DialogueEmotionMode;
   registeredEngines?: RegisteredEngine[];
   onExaggerationChange: (value: number) => void;
   onPauseDurationChange: (value: number) => void;
   onTTSEngineChange: (engine: TTSEngine) => void;
+  onNarratorEmotionChange?: (value: NarratorEmotion) => void;
+  onDialogueEmotionModeChange?: (value: DialogueEmotionMode) => void;
 }
 
 export function SettingsPanel({
   exaggeration,
   pauseDuration,
   ttsEngine,
+  narratorEmotion = "auto",
+  dialogueEmotionMode = "per-chunk",
   registeredEngines = [],
   onExaggerationChange,
   onPauseDurationChange,
   onTTSEngineChange,
+  onNarratorEmotionChange,
+  onDialogueEmotionModeChange,
 }: SettingsPanelProps) {
   const selectedBuiltIn = TTS_ENGINES.find(e => e.id === ttsEngine);
   const selectedRegistered = registeredEngines.find(e => e.engine_id === ttsEngine);
@@ -180,6 +212,60 @@ export function SettingsPanel({
             <span>3 seconds</span>
           </div>
         </div>
+
+        {onNarratorEmotionChange && (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-muted-foreground" />
+                Narrator Emotion
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Override detected emotions for narration segments
+              </p>
+            </div>
+            <Select value={narratorEmotion} onValueChange={(v) => onNarratorEmotionChange(v as NarratorEmotion)}>
+              <SelectTrigger data-testid="select-narrator-emotion">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CANONICAL_EMOTIONS.map((e) => (
+                  <SelectItem key={e.value} value={e.value} data-testid={`option-narrator-emotion-${e.value}`}>
+                    {e.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {onDialogueEmotionModeChange && (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-muted-foreground" />
+                Dialogue Emotion Mode
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                How to handle emotions when a quote spans multiple chunks
+              </p>
+            </div>
+            <Select value={dialogueEmotionMode} onValueChange={(v) => onDialogueEmotionModeChange(v as DialogueEmotionMode)}>
+              <SelectTrigger data-testid="select-dialogue-emotion-mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DIALOGUE_EMOTION_MODES.map((m) => (
+                  <SelectItem key={m.value} value={m.value} data-testid={`option-dialogue-mode-${m.value}`}>
+                    <div>
+                      <span>{m.label}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

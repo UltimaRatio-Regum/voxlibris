@@ -127,6 +127,17 @@ export const speakerConfigSchema = z.object({
 
 export type SpeakerConfig = z.infer<typeof speakerConfigSchema>;
 
+export const narratorEmotionSchema = z.enum([
+  "auto", "neutral", "happy", "sad", "angry", "fear", "disgust", "surprise",
+  "excited", "calm", "anxious", "hopeful", "melancholy", "tender", "proud",
+]);
+export type NarratorEmotion = z.infer<typeof narratorEmotionSchema>;
+
+export const dialogueEmotionModeSchema = z.enum([
+  "per-chunk", "first-chunk", "word-count-majority",
+]);
+export type DialogueEmotionMode = z.infer<typeof dialogueEmotionModeSchema>;
+
 // Project configuration
 export const projectConfigSchema = z.object({
   narratorVoiceId: z.string().nullable(),
@@ -135,6 +146,8 @@ export const projectConfigSchema = z.object({
   pauseBetweenSegments: z.number().min(0).max(3000).default(500),
   speakers: z.record(z.string(), speakerConfigSchema),
   ttsEngine: ttsEngineSchema.default("edge-tts"),
+  narratorEmotion: narratorEmotionSchema.default("auto"),
+  dialogueEmotionMode: dialogueEmotionModeSchema.default("per-chunk"),
 });
 
 export type ProjectConfig = z.infer<typeof projectConfigSchema>;
@@ -309,6 +322,8 @@ export const projectSchema = z.object({
   sourceType: z.string(),
   sourceFilename: z.string().nullable(),
   errorMessage: z.string().nullable(),
+  narratorEmotion: narratorEmotionSchema.default("auto"),
+  dialogueEmotionMode: dialogueEmotionModeSchema.default("per-chunk"),
   outputFormat: outputFormatSchema.default("mp3"),
   metaAuthor: z.string().nullable(),
   metaNarrator: z.string().nullable(),

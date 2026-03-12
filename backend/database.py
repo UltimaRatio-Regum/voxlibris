@@ -198,6 +198,8 @@ class Project(Base):
     exaggeration = Column(Float, nullable=False, default=0.5)
     pause_duration = Column(Float, nullable=False, default=500.0)
     speakers_json = Column(Text, nullable=True)
+    narrator_emotion = Column(String, nullable=False, default="auto")
+    dialogue_emotion_mode = Column(String, nullable=False, default="per-chunk")
     source_type = Column(String, nullable=False, default="text")
     source_filename = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)

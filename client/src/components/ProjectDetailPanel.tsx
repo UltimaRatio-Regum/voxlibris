@@ -34,6 +34,8 @@ import type {
   EdgeVoice,
   OutputFormat,
   SpeakerConfig,
+  NarratorEmotion,
+  DialogueEmotionMode,
 } from "@shared/schema";
 
 const CANONICAL_EMOTIONS = [
@@ -283,6 +285,8 @@ function ProjectSettingsPanel({
   const [baseVoiceId, setBaseVoiceId] = useState(project.baseVoiceId || "");
   const [exaggeration, setExaggeration] = useState(project.exaggeration ?? 0.5);
   const [pauseDuration, setPauseDuration] = useState(project.pauseDuration ?? 500);
+  const [narratorEmotion, setNarratorEmotion] = useState<NarratorEmotion>(project.narratorEmotion || "auto");
+  const [dialogueEmotionMode, setDialogueEmotionMode] = useState<DialogueEmotionMode>(project.dialogueEmotionMode || "per-chunk");
   const [outputFormat, setOutputFormat] = useState<OutputFormat>(project.outputFormat || "mp3");
   const [metaAuthor, setMetaAuthor] = useState(project.metaAuthor || "");
   const [metaNarrator, setMetaNarrator] = useState(project.metaNarrator || "");
@@ -349,6 +353,8 @@ function ProjectSettingsPanel({
     setBaseVoiceId(project.baseVoiceId || "");
     setExaggeration(project.exaggeration ?? 0.5);
     setPauseDuration(project.pauseDuration ?? 500);
+    setNarratorEmotion(project.narratorEmotion || "auto");
+    setDialogueEmotionMode(project.dialogueEmotionMode || "per-chunk");
     setOutputFormat(project.outputFormat || "mp3");
     setMetaAuthor(project.metaAuthor || "");
     setMetaNarrator(project.metaNarrator || "");
@@ -379,6 +385,8 @@ function ProjectSettingsPanel({
         baseVoiceId: baseVoiceId || null,
         exaggeration,
         pauseDuration,
+        narratorEmotion,
+        dialogueEmotionMode,
         outputFormat,
         metaAuthor: metaAuthor || null,
         metaNarrator: metaNarrator || null,
@@ -436,6 +444,8 @@ function ProjectSettingsPanel({
         baseVoiceId: baseVoiceId || null,
         exaggeration,
         pauseDuration,
+        narratorEmotion,
+        dialogueEmotionMode,
         outputFormat,
         metaAuthor: metaAuthor || null,
         metaNarrator: metaNarrator || null,
@@ -571,6 +581,37 @@ function ProjectSettingsPanel({
             step={50}
             data-testid="slider-pause"
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Narrator Emotion</Label>
+          <p className="text-xs text-muted-foreground">Override detected emotions for narration segments</p>
+          <Select value={narratorEmotion} onValueChange={(v) => setNarratorEmotion(v as NarratorEmotion)}>
+            <SelectTrigger data-testid="select-narrator-emotion">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto-detect</SelectItem>
+              {CANONICAL_EMOTIONS.map((e) => (
+                <SelectItem key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Dialogue Emotion Mode</Label>
+          <p className="text-xs text-muted-foreground">How to handle emotions when a quote spans multiple chunks</p>
+          <Select value={dialogueEmotionMode} onValueChange={(v) => setDialogueEmotionMode(v as DialogueEmotionMode)}>
+            <SelectTrigger data-testid="select-dialogue-emotion-mode">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="per-chunk">Per chunk (default)</SelectItem>
+              <SelectItem value="first-chunk">Use first chunk's emotion</SelectItem>
+              <SelectItem value="word-count-majority">Dominant emotion (by word count)</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
