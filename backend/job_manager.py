@@ -247,7 +247,9 @@ def cancel_job(job_id: str) -> bool:
     remove_job_from_engine_queue(job_id)
     
     if job_id in active_jobs:
-        active_jobs[job_id].cancel()
+        task = active_jobs[job_id]
+        if hasattr(task, 'cancel'):
+            task.cancel()
         del active_jobs[job_id]
     
     update_job_status(job_id, JobStatus.CANCELLED)
