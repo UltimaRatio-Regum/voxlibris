@@ -321,7 +321,7 @@ ALSO GOOD (splits long sentence at a natural clause boundary):
 SEGMENTATION RULES:
 1. QUOTE BOUNDARIES: Quoted dialogue (straight " or curly \u201c\u201d) must always be its own segment, separate from surrounding narration. Never mix dialogue and narration in one segment.
 2. NATURAL PAUSES FIRST: Always prefer breaking at natural pause points over hitting a word-count target. A 5-word segment that ends at a sentence boundary is better than a 25-word segment that breaks mid-clause.
-3. SOFT SIZE GUIDE: Target ~25 words per segment. Segments under 10 words are fine if they are complete sentences or short dialogue. Segments up to ~40 words are acceptable if breaking earlier would split a natural phrase. Avoid segments over 45 words.
+3. SOFT SIZE GUIDE: Target ~25 words per segment. Segments under 10 words are fine if they are complete sentences or short dialogue. Segments up to ~40 words are acceptable if breaking earlier would split a natural phrase. Avoid segments over 40 words.
 4. TRANSITIONS: ALWAYS split at transitions between speaking and narrating.
 5. TYPE: Each segment is either "spoken" (dialogue in quotes) or "narration" (everything else).
 

@@ -253,7 +253,7 @@ ALSO GOOD (splits long sentence at a natural clause boundary):
 CHUNKING RULES:
 1. QUOTE BOUNDARIES: Quoted dialogue must always be its own chunk, separate from surrounding narration. Never mix dialogue and narration in one chunk.
 2. NATURAL PAUSES FIRST: Always prefer breaking at natural pause points over hitting a word-count target. A 5-word chunk that ends at a sentence boundary is better than a 25-word chunk that breaks mid-clause.
-3. SOFT SIZE GUIDE: Target ~25 words per chunk. Chunks under 10 words are fine if they are complete sentences or short dialogue. Chunks up to ~40 words are acceptable if breaking earlier would split a natural phrase. Avoid chunks over 45 words.
+3. SOFT SIZE GUIDE: Target ~25 words per chunk. Chunks under 10 words are fine if they are complete sentences or short dialogue. Chunks up to ~40 words are acceptable if breaking earlier would split a natural phrase. Avoid chunks over 40 words.
 4. TYPE: Each chunk is either "narration" or "dialogue", never both.
 5. SPEAKER: For dialogue, identify the speaker by name from context. For narration, speaker is null.
 6. EMOTION: Assign exactly one emotion per chunk from: {emotions_str}
