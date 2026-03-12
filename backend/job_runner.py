@@ -1,13 +1,16 @@
 """
 TTS Job Runner - processes TTS jobs in background threads.
+Per-engine mutex ensures only one job runs per TTS engine at a time.
 """
 import asyncio
 import os
 import io
 import json
 import logging
+import threading
 from typing import Dict, Any, List
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 
 import numpy as np
 from pydub import AudioSegment
@@ -24,6 +27,28 @@ from remote_tts_client import RemoteTTSClient, TTSRequest
 logger = logging.getLogger(__name__)
 
 executor = ThreadPoolExecutor(max_workers=2)
+
+_engine_guard = threading.Lock()
+_engine_busy: Dict[str, bool] = {}
+_engine_queues: Dict[str, List[str]] = defaultdict(list)
+
+
+def _start_next_for_engine(engine: str):
+    with _engine_guard:
+        queue = _engine_queues.get(engine, [])
+        while queue:
+            next_job_id = queue.pop(0)
+            db = get_db_session()
+            try:
+                job = db.query(TTSJob).filter(TTSJob.id == next_job_id).first()
+                if not job or job.status != JobStatus.WAITING.value:
+                    continue
+            finally:
+                db.close()
+            _engine_busy[engine] = True
+            _launch_job_thread(next_job_id, engine)
+            return
+        _engine_busy[engine] = False
 
 
 async def process_job(job_id: str):
@@ -650,10 +675,7 @@ def convert_to_mp3(audio: np.ndarray, sample_rate: int) -> bytes:
     return buffer.getvalue()
 
 
-def start_job_async(job_id: str):
-    """Start processing a job in the background using thread pool."""
-    import threading
-    
+def _launch_job_thread(job_id: str, engine: str):
     def run_in_thread():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -662,11 +684,50 @@ def start_job_async(job_id: str):
         except Exception as e:
             logger.error(f"Job {job_id} failed: {e}")
             update_job_status(job_id, JobStatus.FAILED, error_message=str(e))
+            if job_id in active_jobs:
+                del active_jobs[job_id]
         finally:
             loop.close()
-    
+            _start_next_for_engine(engine)
+
     thread = threading.Thread(target=run_in_thread, daemon=True)
     thread.start()
     active_jobs[job_id] = thread
-    logger.info(f"Started job {job_id} in background thread")
-    return thread
+    logger.info(f"Started job {job_id} for engine '{engine}' in background thread")
+
+
+def start_job_async(job_id: str):
+    """Start processing a job, or queue it if the engine is busy."""
+    db = get_db_session()
+    try:
+        job = db.query(TTSJob).filter(TTSJob.id == job_id).first()
+        if not job:
+            logger.error(f"start_job_async: job {job_id} not found")
+            return
+        engine = job.tts_engine or "edge-tts"
+    finally:
+        db.close()
+
+    with _engine_guard:
+        if not _engine_busy.get(engine, False):
+            _engine_busy[engine] = True
+            logger.info(f"Engine '{engine}' is free — starting job {job_id} immediately")
+            _launch_job_thread(job_id, engine)
+        else:
+            logger.info(f"Engine '{engine}' is busy — job {job_id} queued as waiting")
+            update_job_status(job_id, JobStatus.WAITING, error_message=f"Waiting — engine '{engine}' is busy with another job")
+            _engine_queues[engine].append(job_id)
+
+
+def remove_job_from_engine_queue(job_id: str, engine: str = None):
+    """Remove a waiting job from the engine queue (used for cancellation)."""
+    with _engine_guard:
+        if engine:
+            queue = _engine_queues.get(engine, [])
+            if job_id in queue:
+                queue.remove(job_id)
+        else:
+            for q in _engine_queues.values():
+                if job_id in q:
+                    q.remove(job_id)
+                    break

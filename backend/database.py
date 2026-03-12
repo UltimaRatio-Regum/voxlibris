@@ -23,6 +23,7 @@ Base = declarative_base()
 
 class JobStatus(str, Enum):
     PENDING = "pending"
+    WAITING = "waiting"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"

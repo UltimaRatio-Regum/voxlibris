@@ -63,6 +63,8 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
     switch (status) {
       case "pending":
         return <Clock className="h-4 w-4 text-muted-foreground" />;
+      case "waiting":
+        return <Clock className="h-4 w-4 text-yellow-500" />;
       case "processing":
         return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
       case "completed":
@@ -79,6 +81,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
       pending: "secondary",
+      waiting: "secondary",
       processing: "default",
       completed: "outline",
       failed: "destructive",
@@ -171,19 +174,29 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                   </CollapsibleTrigger>
 
                   <div className="pl-6">
+                    {job.status === "waiting" && (
+                      <div className="flex items-center gap-2 text-xs text-yellow-600 dark:text-yellow-400 mb-1" data-testid={`job-waiting-${job.id}`}>
+                        <Clock className="h-3 w-3" />
+                        <span>{job.errorMessage || "Waiting — engine is busy with another job"}</span>
+                      </div>
+                    )}
                     {job.status === "processing" && job.errorMessage && job.completedSegments === 0 && (
                       <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 mb-1" data-testid={`job-wakeup-${job.id}`}>
                         <Loader2 className="h-3 w-3 animate-spin" />
                         <span>{job.errorMessage}</span>
                       </div>
                     )}
+                    {job.status !== "waiting" && (
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                       <span>
                         {job.completedSegments}/{job.totalSegments} segments
                       </span>
                       <span>{Math.round(job.progress)}%</span>
                     </div>
+                    )}
+                    {job.status !== "waiting" && (
                     <Progress value={job.progress} className="h-1.5" />
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1 pl-6">
@@ -198,7 +211,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                         Download
                       </Button>
                     )}
-                    {job.status === "processing" && (
+                    {(job.status === "processing" || job.status === "waiting") && (
                       <Button
                         size="sm"
                         variant="ghost"

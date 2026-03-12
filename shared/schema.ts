@@ -193,7 +193,7 @@ export const progressUpdateSchema = z.object({
 export type ProgressUpdate = z.infer<typeof progressUpdateSchema>;
 
 // TTS Job types
-export const jobStatusSchema = z.enum(["pending", "processing", "completed", "failed", "cancelled"]);
+export const jobStatusSchema = z.enum(["pending", "waiting", "processing", "completed", "failed", "cancelled"]);
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 
 export const segmentStatusSchema = z.enum(["pending", "processing", "completed", "failed"]);

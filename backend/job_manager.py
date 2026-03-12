@@ -109,7 +109,8 @@ def get_all_jobs(include_completed: bool = True, limit: int = 50) -> List[Dict[s
         query = db.query(TTSJob).order_by(TTSJob.created_at.desc())
         if not include_completed:
             query = query.filter(TTSJob.status.in_([
-                JobStatus.PENDING.value, 
+                JobStatus.PENDING.value,
+                JobStatus.WAITING.value,
                 JobStatus.PROCESSING.value
             ]))
         jobs = query.limit(limit).all()
@@ -240,7 +241,11 @@ def update_segment_status(
 
 
 def cancel_job(job_id: str) -> bool:
-    """Cancel a running job."""
+    """Cancel a running or waiting job."""
+    from job_runner import remove_job_from_engine_queue
+    
+    remove_job_from_engine_queue(job_id)
+    
     if job_id in active_jobs:
         active_jobs[job_id].cancel()
         del active_jobs[job_id]
