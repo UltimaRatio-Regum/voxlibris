@@ -2245,7 +2245,9 @@ async def combine_chunk_with_previous(project_id: str, chunk_id: str):
             c.chunk_index = idx
 
         db.commit()
-        return {"success": True, "combinedChunkId": prev_chunk.id}
+
+        project = db.query(Project).filter(Project.id == project_id).first()
+        return _serialize_project_full(project, db)
     finally:
         db.close()
 
