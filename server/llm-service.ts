@@ -468,8 +468,8 @@ async function parseWithConversation(
     const isFirst = i === 0;
     
     const userPrompt = isFirst
-      ? `Parse the following text into chunks and segments. Target ~25 words per segment, but always break at natural pause points — never mid-phrase. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
-      : `Continue parsing the next section. Target ~25 words per segment, but always break at natural pause points — never mid-phrase. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
+      ? `Parse the following text into chunks and segments. Target ~25 words per segment (soft max ~40), but always break at natural pause points — never mid-phrase. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
+      : `Continue parsing the next section. Target ~25 words per segment (soft max ~40), but always break at natural pause points — never mid-phrase. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
     
     messages.push({ role: "user", content: userPrompt });
     
@@ -571,8 +571,8 @@ export async function* parseTextWithLLMStreaming(
     const isFirst = i === 0;
     
     const userPrompt = isFirst
-      ? `Parse the following text into chunks and segments. Target ~25 words per segment, but always break at natural pause points — never mid-phrase. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
-      : `Continue parsing the next section. Target ~25 words per segment, but always break at natural pause points — never mid-phrase. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
+      ? `Parse the following text into chunks and segments. Target ~25 words per segment (soft max ~40), but always break at natural pause points — never mid-phrase. Start chunk IDs at ${nextChunkId}.\n\nHere is the text:\n\n${batch}`
+      : `Continue parsing the next section. Target ~25 words per segment (soft max ~40), but always break at natural pause points — never mid-phrase. Continue chunk IDs from ${nextChunkId}. Use the same characters identified so far.\n\nHere is the text:\n\n${batch}`;
     
     messages.push({ role: "user", content: userPrompt });
     
