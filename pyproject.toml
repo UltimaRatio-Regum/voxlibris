@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "aiohttp>=3.13.3",
+    "bcrypt>=5.0.0",
     "beautifulsoup4>=4.14.3",
     "ebooklib>=0.20",
     "edge-tts>=7.2.7",

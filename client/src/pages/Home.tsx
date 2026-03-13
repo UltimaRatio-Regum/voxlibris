@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, Sliders, List, Settings, BookOpen } from "lucide-react";
+import { Upload, Sliders, List, Settings, BookOpen, Users, LogOut, Key, Shield } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BeginnerTab } from "@/components/BeginnerTab";
 import { AdvancedTab } from "@/components/AdvancedTab";
@@ -7,14 +7,29 @@ import { JobsPanel } from "@/components/JobsPanel";
 import { SettingsTab } from "@/components/SettingsTab";
 import { ProjectsListPanel } from "@/components/ProjectsListPanel";
 import { ProjectEditor } from "@/components/ProjectEditor";
+import { AdminUsersPage } from "@/pages/AdminUsersPage";
+import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
+import { useAuth } from "@/lib/auth";
 import logoHorizontal from "@assets/vl_full_logo_horizontal.png";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-type TabValue = "beginner" | "advanced" | "jobs" | "settings" | "projects";
+type TabValue = "beginner" | "advanced" | "jobs" | "settings" | "projects" | "users";
 
 export default function Home() {
+  const { user, logout } = useAuth();
+  const isAdmin = user?.userType === "administrator";
   const [activeTab, setActiveTab] = useState<TabValue>("beginner");
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const tabs = [
     { value: "beginner" as const, label: "Beginner", icon: Upload },
@@ -22,6 +37,7 @@ export default function Home() {
     { value: "projects" as const, label: "Projects", icon: BookOpen },
     { value: "jobs" as const, label: "Jobs", icon: List },
     { value: "settings" as const, label: "Settings", icon: Settings },
+    ...(isAdmin ? [{ value: "users" as const, label: "Users", icon: Users }] : []),
   ];
 
   const handleSelectProject = (projectId: string) => {
@@ -43,13 +59,45 @@ export default function Home() {
               className="h-10 w-auto"
             />
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-3">
+            <ThemeToggle />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2" data-testid="button-user-menu">
+                  {isAdmin && <Shield className="h-3 w-3" />}
+                  <span className="hidden sm:inline" data-testid="text-user-display-name">
+                    {user?.displayName || user?.username}
+                  </span>
+                  {isAdmin && (
+                    <Badge variant="secondary" className="text-xs py-0 px-1.5 hidden sm:inline-flex" data-testid="badge-admin">
+                      Admin
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem className="text-xs text-muted-foreground" disabled>
+                  Signed in as {user?.username}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowChangePassword(true)} data-testid="button-change-password">
+                  <Key className="h-4 w-4 mr-2" />
+                  Change Password
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout} data-testid="button-logout">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-6">
         <div className="w-full">
-          <div className="grid w-full grid-cols-5 max-w-xl mx-auto mb-6 p-1 bg-muted rounded-lg">
+          <div className={cn("grid w-full max-w-xl mx-auto mb-6 p-1 bg-muted rounded-lg", isAdmin ? "grid-cols-6" : "grid-cols-5")}>
             {tabs.map((tab) => (
               <button
                 key={tab.value}
@@ -103,8 +151,18 @@ export default function Home() {
               <SettingsTab />
             </div>
           </div>
+
+          {isAdmin && (
+            <div className={cn(activeTab === "users" ? "block" : "hidden")}>
+              <div className="max-w-4xl mx-auto">
+                <AdminUsersPage />
+              </div>
+            </div>
+          )}
         </div>
       </main>
+
+      <ChangePasswordDialog open={showChangePassword} onOpenChange={setShowChangePassword} />
     </div>
   );
 }

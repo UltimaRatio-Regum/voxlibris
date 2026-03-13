@@ -36,6 +36,18 @@ VoxLibris is a web application that transforms plain text into expressive audiob
 ### Deployable Engine Endpoints (`engines/`)
 - A collection of HuggingFace Space Docker SDK implementations for various TTS models (e.g., XTTSv2, Qwen2.5/3-TTS, OpenVoice V2, Chatterbox, StyleTTS2, IndexTTS2). These provide REST APIs adhering to the VoxLibris TTS API Contract, supporting voice cloning, emotion prompting, and other features, designed for external deployment and registration.
 
+### Authentication & Multi-User System
+- **Auth**: Passport.js local strategy with bcrypt passwords; express-session + connect-pg-simple for session storage (30-day sessions).
+- **User Roles**: `user` (default) and `administrator`.
+- **Registration Modes**: `disabled` (default), `invite-only`, `open` — stored in `system_settings` table.
+- **Seed Account**: Username `Administrator`, password `ChangeMe`, created on first startup if no users exist.
+- **Data Isolation**: Projects, custom voices filtered by `user_id`; TTS engines have `is_shared` flag (shared engines visible to all, private engines visible to owner only); admins see everything.
+- **Auth Flow**: Express routes at `/api/auth/*` (login, logout, register, me, change-password, registration-mode); admin routes at `/api/admin/*` (users CRUD, invitation codes, registration mode settings).
+- **Header Forwarding**: Express proxy injects `X-User-Id` and `X-User-Role` headers for the Python backend.
+- **Key Files**: `server/auth.ts` (auth setup), `client/src/lib/auth.tsx` (AuthProvider/useAuth), `client/src/pages/AdminUsersPage.tsx` (admin UI), `client/src/components/ChangePasswordDialog.tsx`.
+- **Database Tables**: `users`, `invitation_codes`, `system_settings`; added `user_id` FK to `projects`, `custom_voices`, `tts_engine_endpoints`; added `is_shared` to `tts_engine_endpoints`, `voice_library`.
+- **Dependencies**: `bcryptjs`, `@types/bcryptjs`, `passport`, `passport-local`, `@types/passport-local`, `express-session`, `@types/express-session`, `connect-pg-simple`, `@types/connect-pg-simple`, `uuid`, `@types/uuid` (Node); `bcrypt` (Python).
+
 ## External Dependencies
 - **Microsoft Azure Neural TTS**: Integrated via `edge-tts`.
 - **Soprano TTS**: Local TTS model.

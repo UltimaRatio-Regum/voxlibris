@@ -34,6 +34,7 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { TTS_ENGINES, isVoiceCloningEngine } from "@/lib/tts-engines";
 import type { TTSEngine, LibraryVoice, EdgeVoice } from "@shared/schema";
+import { useAuth } from "@/lib/auth";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface ProsodySettings {
@@ -60,6 +61,8 @@ interface RegisteredEngine {
   last_tested_at: string | null;
   last_test_success: boolean | null;
   created_at: string | null;
+  user_id: string | null;
+  is_shared: boolean;
 }
 
 interface VoiceLibraryItem {
@@ -389,6 +392,8 @@ function CustomVoicesCard() {
 }
 
 export function SettingsTab() {
+  const { user } = useAuth();
+  const isAdmin = user?.userType === "administrator";
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -409,6 +414,7 @@ export function SettingsTab() {
 
   const [engineUrl, setEngineUrl] = useState("");
   const [engineApiKey, setEngineApiKey] = useState("");
+  const [shareEngine, setShareEngine] = useState(false);
   const [testingEngineId, setTestingEngineId] = useState<string | null>(null);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
 
@@ -491,7 +497,7 @@ export function SettingsTab() {
   });
 
   const addEngineMutation = useMutation({
-    mutationFn: async (data: { url: string; api_key?: string }) => {
+    mutationFn: async (data: { url: string; api_key?: string; is_shared?: boolean }) => {
       const response = await apiRequest("POST", "/api/tts-engines", data);
       return response.json();
     },
@@ -499,6 +505,7 @@ export function SettingsTab() {
       queryClient.invalidateQueries({ queryKey: ["/api/tts-engines"] });
       setEngineUrl("");
       setEngineApiKey("");
+      setShareEngine(false);
       toast({ title: "Engine registered", description: `${data.engine_name} (${data.status})` });
     },
     onError: (error: Error) => {
@@ -628,7 +635,7 @@ export function SettingsTab() {
       toast({ title: "URL required", description: "Enter the engine endpoint URL", variant: "destructive" });
       return;
     }
-    addEngineMutation.mutate({ url: engineUrl.trim(), api_key: engineApiKey.trim() || undefined });
+    addEngineMutation.mutate({ url: engineUrl.trim(), api_key: engineApiKey.trim() || undefined, is_shared: shareEngine });
   };
 
   const handleVoiceUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -827,6 +834,18 @@ export function SettingsTab() {
               {addEngineMutation.isPending ? "Connecting..." : "Add Engine"}
             </Button>
           </div>
+          {isAdmin && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer" data-testid="label-share-engine">
+              <input
+                type="checkbox"
+                checked={shareEngine}
+                onChange={(e) => setShareEngine(e.target.checked)}
+                className="rounded border-border"
+                data-testid="checkbox-share-engine"
+              />
+              Share this engine with all users
+            </label>
+          )}
 
           {enginesLoading && (
             <p className="text-sm text-muted-foreground">Loading engines...</p>
@@ -849,7 +868,14 @@ export function SettingsTab() {
                   {registeredEngines.map((engine) => (
                     <TableRow key={engine.id} data-testid={`row-engine-${engine.engine_id}`}>
                       <TableCell>
-                        <div className="font-medium">{engine.engine_name}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{engine.engine_name}</span>
+                          {engine.is_shared ? (
+                            <Badge variant="outline" className="text-xs">Shared</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">Private</Badge>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{engine.engine_id}</div>
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
@@ -887,15 +913,17 @@ export function SettingsTab() {
                           >
                             <RefreshCw className={`h-4 w-4 ${testingEngineId === engine.engine_id ? "animate-spin" : ""}`} />
                           </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => removeEngineMutation.mutate(engine.engine_id)}
-                            disabled={removeEngineMutation.isPending}
-                            data-testid={`button-remove-engine-${engine.engine_id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {(isAdmin || engine.user_id === user?.id) && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => removeEngineMutation.mutate(engine.engine_id)}
+                              disabled={removeEngineMutation.isPending}
+                              data-testid={`button-remove-engine-${engine.engine_id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1143,7 +1171,7 @@ export function SettingsTab() {
         </CardContent>
       </Card>
 
-      <Card>
+      {isAdmin && <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
@@ -1182,7 +1210,7 @@ export function SettingsTab() {
             <p>Use <code className="text-xs bg-muted px-1 py-0.5 rounded">$&#123;VALID_EMOTIONS&#125;</code> in the prompt to automatically insert the list of available emotions.</p>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

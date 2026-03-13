@@ -32,6 +32,7 @@ def create_job(
     segments: List[Dict[str, Any]],
     config: Dict[str, Any],
     job_group_id: str = None,
+    user_id: str = None,
 ) -> str:
     """Create a new TTS job in the database."""
     db = get_db_session()
@@ -49,6 +50,7 @@ def create_job(
             narrator_voice_id=config.get("narratorVoiceId"),
             config_json=json.dumps(config),
             job_group_id=job_group_id,
+            user_id=user_id,
         )
         db.add(job)
         
@@ -103,7 +105,7 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
         db.close()
 
 
-def get_all_jobs(include_completed: bool = True, limit: int = 50) -> List[Dict[str, Any]]:
+def get_all_jobs(include_completed: bool = True, limit: int = 50, user_id: str = None, user_role: str = "user") -> List[Dict[str, Any]]:
     """Get all jobs, optionally filtering out completed ones."""
     db = get_db_session()
     try:
@@ -114,6 +116,8 @@ def get_all_jobs(include_completed: bool = True, limit: int = 50) -> List[Dict[s
                 JobStatus.WAITING.value,
                 JobStatus.PROCESSING.value
             ]))
+        if user_id and user_role != "administrator":
+            query = query.filter(TTSJob.user_id == user_id)
         jobs = query.limit(limit).all()
         
         return [

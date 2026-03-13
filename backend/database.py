@@ -4,10 +4,12 @@ Uses SQLAlchemy with asyncpg for async PostgreSQL operations.
 """
 import os
 import uuid
+import logging
 from datetime import datetime
 from typing import Optional, List
 from enum import Enum
 
+import bcrypt
 from sqlalchemy import (
     Column, String, Integer, Float, DateTime, Text, ForeignKey, 
     Enum as SQLEnum, LargeBinary, Boolean, JSON, create_engine
@@ -16,9 +18,44 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.pool import StaticPool
 
+logger = logging.getLogger(__name__)
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String, nullable=False, unique=True)
+    email = Column(String, nullable=True)
+    password_hash = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    user_type = Column(String, nullable=False, default="user")
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class InvitationCode(Base):
+    __tablename__ = "invitation_codes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    code = Column(String, nullable=False, unique=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    used_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    used_at = Column(DateTime, nullable=True)
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class JobStatus(str, Enum):
@@ -95,6 +132,7 @@ class TTSJob(Base):
     error_message = Column(Text, nullable=True)
     config_json = Column(Text, nullable=True)
     job_group_id = Column(String, nullable=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -142,6 +180,8 @@ class TTSEngineEndpoint(Base):
     supported_emotions_json = Column(Text, nullable=True)
     extra_properties_json = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_shared = Column(Boolean, nullable=False, default=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     last_tested_at = Column(DateTime, nullable=True)
     last_test_success = Column(Boolean, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -162,6 +202,8 @@ class VoiceLibraryEntry(Base):
     duration = Column(Float, nullable=False, default=0.0)
     audio_data = Column(LargeBinary, nullable=False)
     alt_audio_data = Column(LargeBinary, nullable=True)
+    is_shared = Column(Boolean, nullable=False, default=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -174,6 +216,7 @@ class CustomVoice(Base):
     audio_data = Column(LargeBinary, nullable=False)
     file_ext = Column(String, nullable=False, default=".wav")
     duration = Column(Float, nullable=False, default=0.0)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -210,6 +253,7 @@ class Project(Base):
     meta_year = Column(String, nullable=True)
     meta_description = Column(Text, nullable=True)
     meta_cover_image = Column(LargeBinary, nullable=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -301,6 +345,87 @@ engine = None
 SessionLocal = None
 
 
+def _migrate_columns(db_engine):
+    """Add missing columns to existing tables for backward compatibility."""
+    from sqlalchemy import text, inspect
+    
+    inspector = inspect(db_engine)
+    
+    migrations = [
+        ("projects", "user_id", "ALTER TABLE projects ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
+        ("custom_voices", "user_id", "ALTER TABLE custom_voices ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
+        ("tts_engine_endpoints", "user_id", "ALTER TABLE tts_engine_endpoints ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
+        ("tts_engine_endpoints", "is_shared", "ALTER TABLE tts_engine_endpoints ADD COLUMN is_shared BOOLEAN NOT NULL DEFAULT true"),
+        ("voice_library", "user_id", "ALTER TABLE voice_library ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
+        ("voice_library", "is_shared", "ALTER TABLE voice_library ADD COLUMN is_shared BOOLEAN NOT NULL DEFAULT true"),
+        ("tts_jobs", "user_id", "ALTER TABLE tts_jobs ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
+    ]
+    
+    with db_engine.connect() as conn:
+        for table_name, column_name, sql in migrations:
+            try:
+                columns = [c["name"] for c in inspector.get_columns(table_name)]
+                if column_name not in columns:
+                    conn.execute(text(sql))
+                    conn.commit()
+                    logger.info(f"Added column {column_name} to {table_name}")
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                logger.debug(f"Migration skipped for {table_name}.{column_name}: {e}")
+
+
+def _assign_orphaned_records(session):
+    """Assign records with NULL user_id to the seed admin account."""
+    try:
+        admin = session.query(User).filter(User.user_type == "administrator").first()
+        if not admin:
+            return
+        admin_id = admin.id
+        
+        updated = 0
+        for model in [Project, CustomVoice, TTSEngineEndpoint, TTSJob]:
+            count = session.query(model).filter(model.user_id == None).update(
+                {model.user_id: admin_id}, synchronize_session=False
+            )
+            updated += count
+        
+        if updated > 0:
+            session.commit()
+            logger.info(f"Assigned {updated} orphaned records to admin user {admin_id}")
+    except Exception as e:
+        session.rollback()
+        logger.warning(f"Could not assign orphaned records: {e}")
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _seed_admin(session):
+    existing = session.query(User).first()
+    if existing is None:
+        admin = User(
+            id=str(uuid.uuid4()),
+            username="Administrator",
+            email="admin@localhost",
+            password_hash=_hash_password("ChangeMe"),
+            display_name="Administrator",
+            user_type="administrator",
+            is_enabled=True,
+        )
+        session.add(admin)
+
+        reg_setting = session.query(SystemSetting).filter(SystemSetting.key == "registration_mode").first()
+        if reg_setting is None:
+            session.add(SystemSetting(key="registration_mode", value="disabled"))
+
+        session.commit()
+        logger.info("Seeded administrator account (username: Administrator, password: ChangeMe)")
+
+
 def init_database():
     """Initialize the database connection and create tables."""
     global engine, SessionLocal
@@ -317,6 +442,19 @@ def init_database():
     
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    _migrate_columns(engine)
+
+    try:
+        session = SessionLocal()
+        try:
+            _seed_admin(session)
+            _assign_orphaned_records(session)
+        finally:
+            session.close()
+    except Exception as e:
+        logger.warning(f"Could not seed admin account: {e}")
+
     return engine
 
 

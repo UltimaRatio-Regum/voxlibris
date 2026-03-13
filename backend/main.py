@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
@@ -141,6 +141,60 @@ tts_service = TTSService()
 voice_samples: dict[str, VoiceSample] = {}
 
 
+def _get_user_info(request: FastAPIRequest) -> tuple[Optional[str], str]:
+    """Extract user_id and user_role from proxy-forwarded headers."""
+    user_id = request.headers.get("X-User-Id")
+    user_role = request.headers.get("X-User-Role", "user")
+    return user_id, user_role
+
+
+def _require_project_access(db, user_id: Optional[str], user_role: str, project_id: str):
+    """Verify the user has access to the given project. Raises 404 if not found or unauthorized."""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if user_role != "administrator" and project.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+def _require_voice_access(db, user_id: Optional[str], user_role: str, voice_id: str):
+    """Verify the user has access to the given custom voice."""
+    voice = db.query(CustomVoice).filter(CustomVoice.id == voice_id).first()
+    if not voice:
+        raise HTTPException(status_code=404, detail="Voice not found")
+    if user_role != "administrator" and voice.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Voice not found")
+    return voice
+
+
+def _require_engine_access(db, user_id: Optional[str], user_role: str, engine_id: str, write: bool = False):
+    """Verify the user has access to the given engine. For write ops on shared engines, require admin."""
+    engine = db.query(TTSEngineEndpoint).filter(TTSEngineEndpoint.engine_id == engine_id).first()
+    if not engine:
+        raise HTTPException(status_code=404, detail="Engine not found")
+    if user_role == "administrator":
+        return engine
+    if engine.is_shared:
+        if write:
+            raise HTTPException(status_code=403, detail="Only admins can modify shared engines")
+        return engine
+    if user_id and engine.user_id and engine.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Engine not found")
+    return engine
+
+
+def _require_job_access(db, user_id: Optional[str], user_role: str, job_id: str):
+    """Verify the user has access to the given job."""
+    from database import TTSJob
+    job = db.query(TTSJob).filter(TTSJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if user_role != "administrator" and job.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 def _load_custom_voices_from_db():
     """Load all custom voices from the database into the in-memory dict."""
     try:
@@ -176,10 +230,12 @@ async def get_voices():
 
 @app.post("/voices/upload")
 async def upload_voice(
+    request: FastAPIRequest,
     name: str = Form(...),
     file: UploadFile = File(...),
 ):
     """Upload a voice sample for cloning, persisted to database"""
+    user_id, user_role = _get_user_info(request)
     try:
         voice_id = str(uuid.uuid4())
         file_ext = Path(file.filename).suffix if file.filename else ".wav"
@@ -203,6 +259,7 @@ async def upload_voice(
                 audio_data=content,
                 file_ext=file_ext,
                 duration=duration,
+                user_id=user_id,
             )
             db.add(entry)
             db.commit()
@@ -226,13 +283,12 @@ async def upload_voice(
 
 
 @app.get("/custom-voices/{voice_id}/audio")
-async def get_custom_voice_audio(voice_id: str):
+async def get_custom_voice_audio(voice_id: str, request: FastAPIRequest):
     """Stream custom voice audio from database"""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        voice = db.query(CustomVoice).filter(CustomVoice.id == voice_id).first()
-        if not voice:
-            raise HTTPException(status_code=404, detail="Voice not found")
+        voice = _require_voice_access(db, user_id, user_role, voice_id)
         media_type = "audio/wav" if voice.file_ext in [".wav", ""] else f"audio/{voice.file_ext.lstrip('.')}"
         return Response(content=voice.audio_data, media_type=media_type)
     finally:
@@ -240,11 +296,15 @@ async def get_custom_voice_audio(voice_id: str):
 
 
 @app.get("/custom-voices")
-async def list_custom_voices():
+async def list_custom_voices(request: FastAPIRequest):
     """List all custom voices from the database"""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        voices = db.query(CustomVoice).order_by(CustomVoice.created_at.desc()).all()
+        query = db.query(CustomVoice)
+        if user_id and user_role != "administrator":
+            query = query.filter(CustomVoice.user_id == user_id)
+        voices = query.order_by(CustomVoice.created_at.desc()).all()
         return [
             {
                 "id": v.id,
@@ -260,13 +320,12 @@ async def list_custom_voices():
 
 
 @app.put("/custom-voices/{voice_id}")
-async def rename_custom_voice(voice_id: str, name: str = Form(...)):
+async def rename_custom_voice(voice_id: str, request: FastAPIRequest, name: str = Form(...)):
     """Rename a custom voice"""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        voice = db.query(CustomVoice).filter(CustomVoice.id == voice_id).first()
-        if not voice:
-            raise HTTPException(status_code=404, detail="Voice not found")
+        voice = _require_voice_access(db, user_id, user_role, voice_id)
         voice.name = name
         db.commit()
         if voice_id in voice_samples:
@@ -277,14 +336,14 @@ async def rename_custom_voice(voice_id: str, name: str = Form(...)):
 
 
 @app.delete("/voices/{voice_id}")
-async def delete_voice(voice_id: str):
+async def delete_voice(voice_id: str, request: FastAPIRequest):
     """Delete a voice sample from database"""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        voice = db.query(CustomVoice).filter(CustomVoice.id == voice_id).first()
-        if voice:
-            db.delete(voice)
-            db.commit()
+        voice = _require_voice_access(db, user_id, user_role, voice_id)
+        db.delete(voice)
+        db.commit()
         voice_samples.pop(voice_id, None)
         return {"success": True}
     finally:
@@ -403,17 +462,21 @@ async def get_voice_library():
     return voices
 
 
-class AddEngineRequest(BaseModel):
-    url: str
-    api_key: Optional[str] = None
-
 
 @app.get("/tts-engines")
-async def list_tts_engines():
+async def list_tts_engines(request: FastAPIRequest):
     """List all registered TTS engine endpoints from the database."""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        engines = db.query(TTSEngineEndpoint).filter(TTSEngineEndpoint.is_active == True).all()
+        query = db.query(TTSEngineEndpoint).filter(TTSEngineEndpoint.is_active == True)
+        if user_id and user_role != "administrator":
+            from sqlalchemy import or_
+            query = query.filter(or_(
+                TTSEngineEndpoint.is_shared == True,
+                TTSEngineEndpoint.user_id == user_id,
+            ))
+        engines = query.all()
         result = []
         for e in engines:
             result.append({
@@ -433,20 +496,43 @@ async def list_tts_engines():
                 "last_tested_at": e.last_tested_at.isoformat() if e.last_tested_at else None,
                 "last_test_success": e.last_test_success,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
+                "is_shared": e.is_shared,
+                "user_id": e.user_id,
             })
         return result
     finally:
         db.close()
 
 
+class AddEngineRequestV2(BaseModel):
+    url: str
+    api_key: Optional[str] = None
+    is_shared: bool = False
+
+
 @app.post("/tts-engines")
-async def add_tts_engine(request: AddEngineRequest):
+async def add_tts_engine(req: FastAPIRequest, request_body: AddEngineRequestV2 = None):
     """Register a new TTS engine by URL. Queries GetEngineDetails and stores in DB."""
+    user_id, user_role = _get_user_info(req)
+    
+    if request_body is None:
+        body = await req.json()
+        url = body.get("url", "")
+        api_key = body.get("api_key")
+        is_shared_req = body.get("is_shared", False)
+    else:
+        url = request_body.url
+        api_key = request_body.api_key
+        is_shared_req = request_body.is_shared
+    
+    if is_shared_req and user_role != "administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can create shared engines")
+    
     try:
-        client = RemoteTTSClient(request.url, request.api_key)
+        client = RemoteTTSClient(url, api_key)
         details = await client.get_engine_details()
     except Exception as e:
-        logger.error(f"Failed to query engine at {request.url}: {e}")
+        logger.error(f"Failed to query engine at {url}: {e}")
         raise HTTPException(status_code=400, detail=f"Could not reach engine: {str(e)}")
 
     db = get_db_session()
@@ -455,9 +541,12 @@ async def add_tts_engine(request: AddEngineRequest):
             TTSEngineEndpoint.engine_id == details.engine_id
         ).first()
         if existing:
+            if user_role != "administrator":
+                if existing.is_shared or (existing.user_id and existing.user_id != user_id):
+                    raise HTTPException(status_code=403, detail="Cannot modify this engine")
             existing.engine_name = details.engine_name
-            existing.base_url = request.url.rstrip("/")
-            existing.api_key = request.api_key
+            existing.base_url = url.rstrip("/")
+            existing.api_key = api_key
             existing.sample_rate = details.sample_rate
             existing.bit_depth = details.bit_depth
             existing.channels = details.channels
@@ -484,8 +573,8 @@ async def add_tts_engine(request: AddEngineRequest):
                 id=str(uuid.uuid4()),
                 engine_id=details.engine_id,
                 engine_name=details.engine_name,
-                base_url=request.url.rstrip("/"),
-                api_key=request.api_key,
+                base_url=url.rstrip("/"),
+                api_key=api_key,
                 sample_rate=details.sample_rate,
                 bit_depth=details.bit_depth,
                 channels=details.channels,
@@ -502,6 +591,8 @@ async def add_tts_engine(request: AddEngineRequest):
                 supported_emotions_json=json.dumps(details.supported_emotions),
                 extra_properties_json=json.dumps(details.extra_properties),
                 is_active=True,
+                is_shared=is_shared_req,
+                user_id=user_id,
                 last_tested_at=datetime.utcnow(),
                 last_test_success=True,
             )
@@ -513,15 +604,12 @@ async def add_tts_engine(request: AddEngineRequest):
 
 
 @app.post("/tts-engines/{engine_id}/test")
-async def test_tts_engine(engine_id: str):
+async def test_tts_engine(engine_id: str, request: FastAPIRequest):
     """Test connectivity to a registered TTS engine."""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        entry = db.query(TTSEngineEndpoint).filter(
-            TTSEngineEndpoint.engine_id == engine_id
-        ).first()
-        if not entry:
-            raise HTTPException(status_code=404, detail="Engine not found")
+        entry = _require_engine_access(db, user_id, user_role, engine_id)
 
         try:
             client = RemoteTTSClient(entry.base_url, entry.api_key)
@@ -552,15 +640,12 @@ async def test_tts_engine(engine_id: str):
 
 
 @app.delete("/tts-engines/{engine_id}")
-async def remove_tts_engine(engine_id: str):
+async def remove_tts_engine(engine_id: str, request: FastAPIRequest):
     """Remove a registered TTS engine."""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        entry = db.query(TTSEngineEndpoint).filter(
-            TTSEngineEndpoint.engine_id == engine_id
-        ).first()
-        if not entry:
-            raise HTTPException(status_code=404, detail="Engine not found")
+        entry = _require_engine_access(db, user_id, user_role, engine_id, write=True)
         db.delete(entry)
         db.commit()
         return {"success": True}
@@ -569,11 +654,19 @@ async def remove_tts_engine(engine_id: str):
 
 
 @app.get("/voice-library-db")
-async def get_voice_library_db():
+async def get_voice_library_db(request: FastAPIRequest):
     """Get all voices from the PostgreSQL voice library."""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        voices = db.query(VoiceLibraryEntry).all()
+        query = db.query(VoiceLibraryEntry)
+        if user_id and user_role != "administrator":
+            from sqlalchemy import or_
+            query = query.filter(or_(
+                VoiceLibraryEntry.is_shared == True,
+                VoiceLibraryEntry.user_id == user_id,
+            ))
+        voices = query.all()
         result = []
         for v in voices:
             result.append({
@@ -624,6 +717,7 @@ async def get_voice_alt_audio(voice_id: str):
 
 @app.post("/voice-library-db")
 async def upload_voice_to_library(
+    request: FastAPIRequest,
     name: str = Form(...),
     gender: str = Form(...),
     age: int = Form(0),
@@ -633,6 +727,9 @@ async def upload_voice_to_library(
     file: UploadFile = File(...),
 ):
     """Upload a voice sample to the PostgreSQL voice library."""
+    user_id, user_role = _get_user_info(request)
+    if user_role != "administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can upload to the voice library")
     try:
         audio_bytes = await file.read()
         voice_id = f"custom_{uuid.uuid4().hex[:8]}"
@@ -659,6 +756,8 @@ async def upload_voice_to_library(
                 transcript=transcript or None,
                 duration=duration,
                 audio_data=audio_bytes,
+                is_shared=True,
+                user_id=user_id,
             )
             db.add(entry)
             db.commit()
@@ -676,8 +775,11 @@ async def upload_voice_to_library(
 
 
 @app.delete("/voice-library-db/{voice_id}")
-async def delete_voice_from_library(voice_id: str):
+async def delete_voice_from_library(voice_id: str, request: FastAPIRequest):
     """Delete a voice from the PostgreSQL voice library."""
+    user_id, user_role = _get_user_info(request)
+    if user_role != "administrator":
+        raise HTTPException(status_code=403, detail="Only administrators can delete voice library entries")
     db = get_db_session()
     try:
         voice = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == voice_id).first()
@@ -1170,13 +1272,15 @@ class CreateJobRequest(BaseModel):
 
 
 @app.post("/jobs")
-async def create_tts_job(request: CreateJobRequest):
+async def create_tts_job(request: CreateJobRequest, req: FastAPIRequest):
     """Create a new TTS generation job."""
+    user_id, user_role = _get_user_info(req)
     try:
         job_id = create_job(
             title=request.title,
             segments=request.segments,
             config=request.config,
+            user_id=user_id,
         )
         
         start_job_async(job_id)
@@ -1188,10 +1292,11 @@ async def create_tts_job(request: CreateJobRequest):
 
 
 @app.get("/jobs")
-async def list_jobs(include_completed: bool = True, limit: int = 50):
+async def list_jobs(request: FastAPIRequest, include_completed: bool = True, limit: int = 50):
     """List all TTS jobs."""
+    user_id, user_role = _get_user_info(request)
     try:
-        jobs = get_all_jobs(include_completed=include_completed, limit=limit)
+        jobs = get_all_jobs(include_completed=include_completed, limit=limit, user_id=user_id, user_role=user_role)
         return {"jobs": jobs}
     except Exception as e:
         logger.error(f"Failed to list jobs: {e}")
@@ -1199,8 +1304,14 @@ async def list_jobs(include_completed: bool = True, limit: int = 50):
 
 
 @app.get("/jobs/{job_id}")
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str, request: FastAPIRequest):
     """Get status of a TTS job."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        _require_job_access(db, user_id, user_role, job_id)
+    finally:
+        db.close()
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1208,8 +1319,14 @@ async def get_job_status(job_id: str):
 
 
 @app.get("/jobs/{job_id}/segments")
-async def get_job_segments_endpoint(job_id: str, completed_only: bool = False):
+async def get_job_segments_endpoint(job_id: str, request: FastAPIRequest, completed_only: bool = False):
     """Get segments for a job."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        _require_job_access(db, user_id, user_role, job_id)
+    finally:
+        db.close()
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1219,8 +1336,14 @@ async def get_job_segments_endpoint(job_id: str, completed_only: bool = False):
 
 
 @app.get("/jobs/{job_id}/segments/{segment_id}/audio")
-async def get_segment_audio_endpoint(job_id: str, segment_id: str):
+async def get_segment_audio_endpoint(job_id: str, segment_id: str, request: FastAPIRequest):
     """Get audio for a specific segment."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        _require_job_access(db, user_id, user_role, job_id)
+    finally:
+        db.close()
     from fastapi.responses import Response
     
     audio_data = get_segment_audio(segment_id)
@@ -1252,8 +1375,14 @@ async def clear_completed_jobs():
 
 
 @app.post("/jobs/{job_id}/cancel")
-async def cancel_job_endpoint(job_id: str):
+async def cancel_job_endpoint(job_id: str, request: FastAPIRequest):
     """Cancel a running job."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        _require_job_access(db, user_id, user_role, job_id)
+    finally:
+        db.close()
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1294,16 +1423,28 @@ async def retry_job_endpoint(job_id: str):
 
 
 @app.delete("/jobs/{job_id}")
-async def delete_job_endpoint(job_id: str):
+async def delete_job_endpoint(job_id: str, request: FastAPIRequest):
     """Delete a job and its segments."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        _require_job_access(db, user_id, user_role, job_id)
+    finally:
+        db.close()
     if delete_job(job_id):
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="Job not found")
 
 
 @app.get("/jobs/{job_id}/audio")
-async def get_combined_audio(job_id: str, max_silence_ms: int = 300):
+async def get_combined_audio(job_id: str, request: FastAPIRequest, max_silence_ms: int = 300):
     """Get combined audio for all completed segments with silence compression."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        _require_job_access(db, user_id, user_role, job_id)
+    finally:
+        db.close()
     from fastapi.responses import Response
     from pydub import AudioSegment as PydubSegment
     import io
@@ -1469,8 +1610,9 @@ def parse_voice_id(voice_id: str) -> dict:
 
 
 @app.post("/uploads/{upload_id}/generate")
-async def generate_from_upload(upload_id: str, request: GenerateFromUploadRequest):
+async def generate_from_upload(upload_id: str, request: GenerateFromUploadRequest, req: FastAPIRequest):
     """Generate TTS jobs from an analyzed upload."""
+    gen_user_id, gen_user_role = _get_user_info(req)
     upload = upload_manager.get_upload(upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
@@ -1532,7 +1674,8 @@ async def generate_from_upload(upload_id: str, request: GenerateFromUploadReques
         job_id = create_job(
             title=f"{upload['filename']} - {chapter['title']}",
             segments=segments,
-            config=config
+            config=config,
+            user_id=gen_user_id,
         )
         
         from database import get_db_session, FileChapter
@@ -2013,10 +2156,16 @@ def _serialize_project_full(project: Project, db) -> dict:
 
 
 @app.get("/projects")
-async def list_projects():
+async def list_projects(request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        projects = db.query(Project).order_by(Project.updated_at.desc()).all()
+        query = db.query(Project)
+        if user_id and user_role != "administrator":
+            query = query.filter(
+                Project.user_id == user_id
+            )
+        projects = query.order_by(Project.updated_at.desc()).all()
         return [_serialize_project_list(p) for p in projects]
     finally:
         db.close()
@@ -2024,16 +2173,19 @@ async def list_projects():
 
 @app.post("/projects")
 async def create_project(
+    request: FastAPIRequest,
     title: str = Form(...),
     text: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
         project = Project(
             id=str(uuid.uuid4()),
             title=title,
             status="draft",
+            user_id=user_id,
         )
 
         if file and file.filename:
@@ -2101,24 +2253,22 @@ async def create_project(
 
 
 @app.get("/projects/{project_id}")
-async def get_project(project_id: str):
+async def get_project(project_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
         return _serialize_project_full(project, db)
     finally:
         db.close()
 
 
 @app.patch("/projects/{project_id}")
-async def update_project(project_id: str, request: UpdateProjectSettingsRequest):
+async def update_project(project_id: str, request: UpdateProjectSettingsRequest, req: FastAPIRequest):
+    user_id, user_role = _get_user_info(req)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         if request.ttsEngine is not None:
             project.tts_engine = request.ttsEngine
@@ -2158,12 +2308,11 @@ async def update_project(project_id: str, request: UpdateProjectSettingsRequest)
 
 
 @app.delete("/projects/{project_id}")
-async def delete_project(project_id: str):
+async def delete_project(project_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         db.delete(project)
         db.commit()
@@ -2173,9 +2322,11 @@ async def delete_project(project_id: str):
 
 
 @app.patch("/projects/{project_id}/chapters/{chapter_id}")
-async def update_chapter(project_id: str, chapter_id: str, request: UpdateChapterRequest):
+async def update_chapter(project_id: str, chapter_id: str, request: UpdateChapterRequest, req: FastAPIRequest):
+    user_id, user_role = _get_user_info(req)
     db = get_db_session()
     try:
+        _require_project_access(db, user_id, user_role, project_id)
         chapter = db.query(ProjectChapter).filter(
             ProjectChapter.id == chapter_id,
             ProjectChapter.project_id == project_id
@@ -2198,9 +2349,11 @@ async def update_chapter(project_id: str, chapter_id: str, request: UpdateChapte
 
 
 @app.patch("/projects/{project_id}/chunks/{chunk_id}")
-async def update_chunk(project_id: str, chunk_id: str, request: UpdateChunkRequest):
+async def update_chunk(project_id: str, chunk_id: str, request: UpdateChunkRequest, req: FastAPIRequest):
+    user_id, user_role = _get_user_info(req)
     db = get_db_session()
     try:
+        _require_project_access(db, user_id, user_role, project_id)
         chunk = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
             ProjectChunk.id == chunk_id,
             ProjectChapter.project_id == project_id
@@ -2223,9 +2376,11 @@ async def update_chunk(project_id: str, chunk_id: str, request: UpdateChunkReque
 WORDS_PER_SECOND = 2.5
 
 @app.post("/projects/{project_id}/chunks/{chunk_id}/combine-with-previous")
-async def combine_chunk_with_previous(project_id: str, chunk_id: str):
+async def combine_chunk_with_previous(project_id: str, chunk_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
+        _require_project_access(db, user_id, user_role, project_id)
         chunk = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
             ProjectChunk.id == chunk_id,
             ProjectChapter.project_id == project_id
@@ -2276,12 +2431,11 @@ class BatchChunkUpdateRequest(BaseModel):
     updates: list[BatchChunkUpdate]
 
 @app.post("/projects/{project_id}/chunks/batch-update")
-async def batch_update_chunks(project_id: str, request: BatchChunkUpdateRequest):
+async def batch_update_chunks(project_id: str, request: BatchChunkUpdateRequest, req: FastAPIRequest):
+    user_id, user_role = _get_user_info(req)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         chunk_ids = [u.chunkId for u in request.updates]
         chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
@@ -2333,12 +2487,11 @@ class MergeSpeakersRequest(BaseModel):
 
 
 @app.post("/projects/{project_id}/speakers/merge")
-async def merge_speakers(project_id: str, request: MergeSpeakersRequest):
+async def merge_speakers(project_id: str, request: MergeSpeakersRequest, req: FastAPIRequest):
+    user_id, user_role = _get_user_info(req)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
             ProjectChapter.project_id == project_id
@@ -2383,13 +2536,12 @@ class SegmentProjectRequest(BaseModel):
     model: str = "openai/gpt-4.1-mini"
 
 @app.post("/projects/{project_id}/segment")
-async def segment_project(project_id: str, request: Optional[SegmentProjectRequest] = None):
+async def segment_project(project_id: str, req: FastAPIRequest, request: Optional[SegmentProjectRequest] = None):
+    user_id, user_role = _get_user_info(req)
     model = request.model if request else "openai/gpt-4.1-mini"
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         if project.status not in ("draft", "failed", "segmented"):
             raise HTTPException(status_code=400, detail=f"Cannot segment project in state: {project.status}")
@@ -2446,12 +2598,11 @@ def _build_segment_data(chunk, chapter, tts_engine, narrator_voice_id, speakers)
 
 
 @app.post("/projects/{project_id}/generate")
-async def generate_project_audio(project_id: str, request: GenerateProjectAudioRequest):
+async def generate_project_audio(project_id: str, request: GenerateProjectAudioRequest, req: FastAPIRequest):
+    user_id, user_role = _get_user_info(req)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         tts_engine = project.tts_engine
         narrator_voice_id = project.narrator_voice_id
@@ -2491,7 +2642,8 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "scopeType": "chunk",
                     "scopeId": request.scopeId,
                     "chunkIds": [chunk.id],
-                }
+                },
+                user_id=user_id,
             )
             start_job_async(job_id)
             return {"success": True, "jobId": job_id, "totalSegments": 1}
@@ -2538,7 +2690,8 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "sectionLabel": section_label,
                     "chapterTitle": chapter_title,
                     "chunkIds": [c.id for c in chunks],
-                }
+                },
+                user_id=user_id,
             )
             start_job_async(job_id)
             return {"success": True, "jobId": job_id, "totalSegments": len(segments)}
@@ -2627,6 +2780,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                         "chapterIdsInGroup": chapter_ids_in_group,
                     },
                     job_group_id=job_group_id,
+                    user_id=user_id,
                 )
                 job_ids.append(job_id)
                 total_segments += len(segments)
@@ -2655,9 +2809,11 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
 
 
 @app.get("/projects/{project_id}/audio")
-async def list_project_audio(project_id: str):
+async def list_project_audio(project_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
+        _require_project_access(db, user_id, user_role, project_id)
         audio_files = db.query(ProjectAudioFile).filter(
             ProjectAudioFile.project_id == project_id
         ).order_by(ProjectAudioFile.created_at.desc()).all()
@@ -2680,9 +2836,11 @@ async def list_project_audio(project_id: str):
 
 
 @app.get("/projects/{project_id}/audio/{audio_file_id}")
-async def get_project_audio(project_id: str, audio_file_id: str):
+async def get_project_audio(project_id: str, audio_file_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
+        _require_project_access(db, user_id, user_role, project_id)
         af = db.query(ProjectAudioFile).filter(
             ProjectAudioFile.id == audio_file_id,
             ProjectAudioFile.project_id == project_id
@@ -2697,12 +2855,11 @@ async def get_project_audio(project_id: str, audio_file_id: str):
 
 
 @app.post("/projects/{project_id}/cover")
-async def upload_cover_image(project_id: str, file: UploadFile = File(...)):
+async def upload_cover_image(project_id: str, request: FastAPIRequest, file: UploadFile = File(...)):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         content = await file.read()
         if len(content) > 5 * 1024 * 1024:
@@ -2717,11 +2874,12 @@ async def upload_cover_image(project_id: str, file: UploadFile = File(...)):
 
 
 @app.get("/projects/{project_id}/cover")
-async def get_cover_image(project_id: str):
+async def get_cover_image(project_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project or not project.meta_cover_image:
+        project = _require_project_access(db, user_id, user_role, project_id)
+        if not project.meta_cover_image:
             raise HTTPException(status_code=404, detail="No cover image")
 
         data = project.meta_cover_image
@@ -2736,12 +2894,11 @@ async def get_cover_image(project_id: str):
 
 
 @app.delete("/projects/{project_id}/cover")
-async def delete_cover_image(project_id: str):
+async def delete_cover_image(project_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         project.meta_cover_image = None
         project.updated_at = datetime.utcnow()
@@ -2939,17 +3096,16 @@ async def get_project_audio_stats(project_id: str):
 
 
 @app.get("/projects/{project_id}/export")
-async def export_project(project_id: str, format: str = "mp3"):
+async def export_project(project_id: str, request: FastAPIRequest, format: str = "mp3"):
     from backend.audio_export import export_single_mp3, export_mp3_per_chapter, export_m4b
 
+    user_id, user_role = _get_user_info(request)
     if format not in ("mp3", "mp3-chapters", "m4b"):
         raise HTTPException(status_code=400, detail="Invalid format. Use: mp3, mp3-chapters, m4b")
 
     db = get_db_session()
     try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
+        project = _require_project_access(db, user_id, user_role, project_id)
 
         chapters = db.query(ProjectChapter).filter(
             ProjectChapter.project_id == project_id

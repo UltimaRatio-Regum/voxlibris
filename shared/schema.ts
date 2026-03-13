@@ -380,14 +380,55 @@ export const generateProjectAudioRequestSchema = z.object({
 });
 export type GenerateProjectAudioRequest = z.infer<typeof generateProjectAudioRequestSchema>;
 
-// Legacy user types (kept for compatibility)
 export const userSchema = z.object({
   id: z.string(),
   username: z.string(),
-  password: z.string(),
+  email: z.string().nullable(),
+  displayName: z.string().nullable(),
+  userType: z.enum(["user", "administrator"]),
+  isEnabled: z.boolean(),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
 });
 
 export type User = z.infer<typeof userSchema>;
 
-export const insertUserSchema = userSchema.omit({ id: true });
+export const insertUserSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(4),
+  email: z.string().email().optional(),
+  displayName: z.string().optional(),
+  userType: z.enum(["user", "administrator"]).default("user"),
+});
 export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export const loginSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+});
+export type LoginRequest = z.infer<typeof loginSchema>;
+
+export const registerSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(4),
+  email: z.string().email(),
+  ageConfirmed: z.literal(true),
+  invitationCode: z.string().optional(),
+});
+export type RegisterRequest = z.infer<typeof registerSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(4),
+});
+export type ChangePasswordRequest = z.infer<typeof changePasswordSchema>;
+
+export const invitationCodeSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  createdBy: z.string(),
+  usedBy: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  usedAt: z.string().nullable(),
+});
+export type InvitationCode = z.infer<typeof invitationCodeSchema>;

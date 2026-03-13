@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import express from "express";
 import { parseTextWithLLM, parseTextWithLLMStreaming, getAvailableModels, isOpenRouterConfigured, invalidatePromptCache } from "./llm-service";
+import { ensureAuthenticated, ensureAdmin } from "./auth";
 
 const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || "http://127.0.0.1:8000";
 
@@ -20,13 +21,22 @@ async function fallbackToBasicParsing(text: string): Promise<any> {
   return response.json();
 }
 
+function getUserHeaders(req: Request): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (req.isAuthenticated() && req.user) {
+    const user = req.user as any;
+    headers['X-User-Id'] = user.id;
+    headers['X-User-Role'] = user.user_type;
+  }
+  return headers;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
-  // LLM-powered text parsing endpoint with automatic fallback
-  app.post('/api/parse-text-llm', express.json(), async (req: Request, res: Response) => {
+  app.post('/api/parse-text-llm', ensureAuthenticated, express.json(), async (req: Request, res: Response) => {
     try {
       const { text, model, knownSpeakers } = req.body as { 
         text: string; 
@@ -38,7 +48,6 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'Text is required' });
       }
 
-      // Check if OpenRouter is configured
       if (!isOpenRouterConfigured()) {
         console.log('OpenRouter not configured, falling back to basic parsing');
         const fallbackResult = await fallbackToBasicParsing(text);
@@ -53,7 +62,6 @@ export async function registerRoutes(
         const speakers = Array.isArray(knownSpeakers) ? knownSpeakers : [];
         const result = await parseTextWithLLM(text, model, speakers);
         
-        // Calculate proper text positions and include all new fields
         let currentPos = 0;
         const segments = result.segments.map((seg, index) => {
           const segmentText = seg.text;
@@ -82,7 +90,6 @@ export async function registerRoutes(
           detectedSpeakers: result.detectedSpeakers,
         });
       } catch (llmError) {
-        // LLM failed, fall back to basic parsing
         console.error('LLM parsing failed, falling back to basic:', llmError);
         const fallbackResult = await fallbackToBasicParsing(text);
         return res.json({
@@ -100,8 +107,7 @@ export async function registerRoutes(
     }
   });
 
-  // Streaming LLM parsing endpoint with SSE
-  app.post('/api/parse-text-llm-stream', express.json(), async (req: Request, res: Response) => {
+  app.post('/api/parse-text-llm-stream', ensureAuthenticated, express.json(), async (req: Request, res: Response) => {
     try {
       const { text, model, knownSpeakers } = req.body as { 
         text: string; 
@@ -113,7 +119,6 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'Text is required' });
       }
 
-      // Check if OpenRouter is configured
       if (!isOpenRouterConfigured()) {
         console.log('OpenRouter not configured, falling back to basic parsing');
         const fallbackResult = await fallbackToBasicParsing(text);
@@ -124,14 +129,12 @@ export async function registerRoutes(
         });
       }
 
-      // Set up SSE headers
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+      res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders();
       
-      // Helper to flush after each write
       const sendSSE = (data: object) => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
         if (typeof (res as any).flush === 'function') {
@@ -162,7 +165,6 @@ export async function registerRoutes(
         }
         
         if (update.type === 'chunk' && update.segments) {
-          // Process segments with proper positions and all new fields
           const processedSegments = update.segments.map((seg, index) => {
             const segmentText = seg.text;
             const startIdx = text.indexOf(segmentText, currentPos);
@@ -221,8 +223,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get available LLM models
-  app.get('/api/models', async (_req: Request, res: Response) => {
+  app.get('/api/models', ensureAuthenticated, async (_req: Request, res: Response) => {
     try {
       const models = await getAvailableModels();
       const configured = isOpenRouterConfigured();
@@ -232,7 +233,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post('/api/parsing-prompt', express.json(), async (req: Request, res: Response) => {
+  app.post('/api/parsing-prompt', ensureAdmin, express.json(), async (req: Request, res: Response) => {
     try {
       const resp = await fetch(`${PYTHON_BACKEND_URL}/parsing-prompt`, {
         method: 'POST',
@@ -247,12 +248,35 @@ export async function registerRoutes(
     }
   });
 
+  app.delete('/api/parsing-prompt', ensureAdmin, async (_req: Request, res: Response) => {
+    try {
+      const resp = await fetch(`${PYTHON_BACKEND_URL}/parsing-prompt`, { method: 'DELETE' });
+      const data = await resp.json();
+      invalidatePromptCache();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to reset parsing prompt' });
+    }
+  });
+
   const apiProxy = createProxyMiddleware({
     target: PYTHON_BACKEND_URL,
     changeOrigin: true,
     pathRewrite: undefined,
     logger: console,
     on: {
+      proxyReq: (proxyReq, req) => {
+        const headers = getUserHeaders(req as Request);
+        for (const [key, value] of Object.entries(headers)) {
+          proxyReq.setHeader(key, value);
+        }
+        if ((req as any).body && !req.headers['content-type']?.includes('multipart/form-data')) {
+          const bodyData = JSON.stringify((req as any).body);
+          proxyReq.setHeader('Content-Type', 'application/json');
+          proxyReq.setHeader('Content-Length', Buffer.byteLength(bodyData));
+          proxyReq.write(bodyData);
+        }
+      },
       error: (err, req, res) => {
         console.error('Proxy error:', err.message);
         if (res && 'writeHead' in res && !res.headersSent) {
@@ -266,24 +290,48 @@ export async function registerRoutes(
     },
   });
 
-  app.use('/api', apiProxy);
+  app.use('/api', ensureAuthenticated, apiProxy);
   
-  app.use('/uploads', createProxyMiddleware({
+  app.use('/uploads', ensureAuthenticated, createProxyMiddleware({
     target: PYTHON_BACKEND_URL,
     changeOrigin: true,
     pathRewrite: (path, req) => '/uploads' + path,
+    on: {
+      proxyReq: (proxyReq, req) => {
+        const headers = getUserHeaders(req as Request);
+        for (const [key, value] of Object.entries(headers)) {
+          proxyReq.setHeader(key, value);
+        }
+      },
+    },
   }));
 
-  app.use('/voice_library', createProxyMiddleware({
+  app.use('/voice_library', ensureAuthenticated, createProxyMiddleware({
     target: PYTHON_BACKEND_URL,
     changeOrigin: true,
     pathRewrite: (path, req) => '/voice_library' + path,
+    on: {
+      proxyReq: (proxyReq, req) => {
+        const headers = getUserHeaders(req as Request);
+        for (const [key, value] of Object.entries(headers)) {
+          proxyReq.setHeader(key, value);
+        }
+      },
+    },
   }));
 
-  app.use('/custom-voices', createProxyMiddleware({
+  app.use('/custom-voices', ensureAuthenticated, createProxyMiddleware({
     target: PYTHON_BACKEND_URL,
     changeOrigin: true,
     pathRewrite: (path, req) => '/custom-voices' + path,
+    on: {
+      proxyReq: (proxyReq, req) => {
+        const headers = getUserHeaders(req as Request);
+        for (const [key, value] of Object.entries(headers)) {
+          proxyReq.setHeader(key, value);
+        }
+      },
+    },
   }));
 
   return httpServer;
