@@ -1105,10 +1105,19 @@ function ChunkDetailPanel({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("PATCH", `/api/projects/${project.id}/chunks/${chunk.id}`, {
-        speakerOverride: speakerOverride && speakerOverride !== "__auto__" ? speakerOverride : null,
+      const body: Record<string, any> = {
         emotionOverride: emotionOverride && emotionOverride !== "__auto__" ? emotionOverride : null,
-      });
+      };
+      if (speakerOverride === "__narrator__") {
+        body.speakerOverride = null;
+        body.segmentType = "narration";
+      } else if (speakerOverride && speakerOverride !== "__auto__") {
+        body.speakerOverride = speakerOverride;
+        body.segmentType = "dialogue";
+      } else {
+        body.speakerOverride = null;
+      }
+      await apiRequest("PATCH", `/api/projects/${project.id}/chunks/${chunk.id}`, body);
     },
     onSuccess: () => {
       toast({ title: "Chunk overrides saved" });
@@ -1171,6 +1180,7 @@ function ChunkDetailPanel({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__auto__">Use auto-detected</SelectItem>
+              <SelectItem value="__narrator__">Narrator (narration)</SelectItem>
               {Array.from(allSpeakers).map((s) => (
                 <SelectItem key={s} value={s}>{s}</SelectItem>
               ))}

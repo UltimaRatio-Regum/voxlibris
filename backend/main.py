@@ -2017,6 +2017,14 @@ class UpdateChapterRequest(BaseModel):
 class UpdateChunkRequest(BaseModel):
     speakerOverride: Optional[str] = None
     emotionOverride: Optional[str] = None
+    segmentType: Optional[str] = None
+
+
+class BulkUpdateChunksRequest(BaseModel):
+    chunkIds: list[str]
+    speakerOverride: Optional[str] = None
+    emotionOverride: Optional[str] = None
+    segmentType: Optional[str] = None
 
 
 class GenerateProjectAudioRequest(BaseModel):
@@ -2365,10 +2373,48 @@ async def update_chunk(project_id: str, chunk_id: str, request: UpdateChunkReque
             chunk.speaker_override = request.speakerOverride if request.speakerOverride != "" else None
         if request.emotionOverride is not None:
             chunk.emotion_override = request.emotionOverride if request.emotionOverride != "" else None
+        if request.segmentType is not None:
+            if request.segmentType in ("narration", "dialogue"):
+                chunk.segment_type = request.segmentType
 
         chunk.updated_at = datetime.utcnow()
         db.commit()
         return {"success": True}
+    finally:
+        db.close()
+
+
+@app.post("/projects/{project_id}/chunks/bulk-update")
+async def bulk_update_chunks(project_id: str, request: BulkUpdateChunksRequest, req: FastAPIRequest):
+    user_id, user_role = _get_user_info(req)
+    db = get_db_session()
+    try:
+        _require_project_access(db, user_id, user_role, project_id)
+
+        if not request.chunkIds:
+            raise HTTPException(status_code=400, detail="No chunk IDs provided")
+
+        chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
+            ProjectChunk.id.in_(request.chunkIds),
+            ProjectChapter.project_id == project_id
+        ).all()
+
+        if len(chunks) == 0:
+            raise HTTPException(status_code=404, detail="No matching chunks found")
+
+        now = datetime.utcnow()
+        for chunk in chunks:
+            if request.speakerOverride is not None:
+                chunk.speaker_override = request.speakerOverride if request.speakerOverride != "" else None
+            if request.emotionOverride is not None:
+                chunk.emotion_override = request.emotionOverride if request.emotionOverride != "" else None
+            if request.segmentType is not None:
+                if request.segmentType in ("narration", "dialogue"):
+                    chunk.segment_type = request.segmentType
+            chunk.updated_at = now
+
+        db.commit()
+        return {"success": True, "updatedCount": len(chunks)}
     finally:
         db.close()
 

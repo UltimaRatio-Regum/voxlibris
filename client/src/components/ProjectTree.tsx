@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { ChevronRight, ChevronDown, Book, FileText, Layers, Type, Loader2, CheckCircle2, AlertCircle, Volume2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectData, ProjectChapter, ProjectSection, ProjectChunk } from "@shared/schema";
@@ -14,7 +14,9 @@ export interface TreeSelection {
 interface ProjectTreeProps {
   project: ProjectData;
   selection: TreeSelection | null;
+  selectedChunkIds: Set<string>;
   onSelect: (selection: TreeSelection) => void;
+  onMultiSelect: (chunkIds: Set<string>, chunks: ProjectChunk[]) => void;
 }
 
 function StatusIcon({ status }: { status: string }) {
@@ -58,7 +60,7 @@ function TreeNode({
   isExpanded?: boolean;
   hasChildren: boolean;
   depth: number;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onToggle?: () => void;
   testId: string;
 }) {
@@ -102,8 +104,9 @@ function TreeNode({
   );
 }
 
-export function ProjectTree({ project, selection, onSelect }: ProjectTreeProps) {
+export function ProjectTree({ project, selection, selectedChunkIds, onSelect, onMultiSelect }: ProjectTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(["project"]));
+  const lastClickedChunkRef = useRef<string | null>(null);
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => {
@@ -117,6 +120,77 @@ export function ProjectTree({ project, selection, onSelect }: ProjectTreeProps) 
     });
   };
 
+  const allChunksFlat = useCallback((): ProjectChunk[] => {
+    const result: ProjectChunk[] = [];
+    for (const ch of project.chapters || []) {
+      for (const sec of ch.sections || []) {
+        for (const chunk of sec.chunks || []) {
+          result.push(chunk);
+        }
+      }
+    }
+    return result;
+  }, [project]);
+
+  const handleChunkClick = useCallback((e: React.MouseEvent, chunk: ProjectChunk) => {
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+
+    if (isCtrl) {
+      const newSet = new Set(selectedChunkIds);
+      if (newSet.size === 0 && selection?.type === "chunk" && selection.id !== chunk.id) {
+        newSet.add(selection.id);
+      }
+      if (newSet.has(chunk.id)) {
+        newSet.delete(chunk.id);
+      } else {
+        newSet.add(chunk.id);
+      }
+      lastClickedChunkRef.current = chunk.id;
+
+      if (newSet.size === 1) {
+        const remainingId = Array.from(newSet)[0];
+        const all = allChunksFlat();
+        const remainingChunk = all.find(c => c.id === remainingId);
+        if (remainingChunk) {
+          onSelect({ type: "chunk", id: remainingId, data: remainingChunk });
+          onMultiSelect(new Set(), []);
+        }
+      } else if (newSet.size === 0) {
+        onMultiSelect(new Set(), []);
+      } else {
+        const all = allChunksFlat();
+        const selectedChunks = all.filter(c => newSet.has(c.id));
+        onMultiSelect(newSet, selectedChunks);
+      }
+    } else if (isShift && lastClickedChunkRef.current) {
+      const all = allChunksFlat();
+      const lastIdx = all.findIndex(c => c.id === lastClickedChunkRef.current);
+      const currentIdx = all.findIndex(c => c.id === chunk.id);
+      if (lastIdx >= 0 && currentIdx >= 0) {
+        const start = Math.min(lastIdx, currentIdx);
+        const end = Math.max(lastIdx, currentIdx);
+        const rangeChunks = all.slice(start, end + 1);
+        const newSet = new Set(selectedChunkIds);
+        for (const c of rangeChunks) {
+          newSet.add(c.id);
+        }
+        const selectedChunks = all.filter(c => newSet.has(c.id));
+        onMultiSelect(newSet, selectedChunks);
+      }
+    } else {
+      lastClickedChunkRef.current = chunk.id;
+      onMultiSelect(new Set(), []);
+      onSelect({ type: "chunk", id: chunk.id, data: chunk });
+    }
+  }, [selectedChunkIds, selection, onSelect, onMultiSelect, allChunksFlat]);
+
+  const handleNonChunkClick = useCallback((sel: TreeSelection) => {
+    lastClickedChunkRef.current = null;
+    onMultiSelect(new Set(), []);
+    onSelect(sel);
+  }, [onSelect, onMultiSelect]);
+
   const chapters = project.chapters || [];
   const isProjectExpanded = expandedNodes.has("project");
 
@@ -127,11 +201,11 @@ export function ProjectTree({ project, selection, onSelect }: ProjectTreeProps) 
         label={project.title}
         sublabel={`${chapters.length} ch`}
         status={project.status}
-        isSelected={selection?.type === "project" && selection.id === project.id}
+        isSelected={selectedChunkIds.size === 0 && selection?.type === "project" && selection.id === project.id}
         isExpanded={isProjectExpanded}
         hasChildren={chapters.length > 0}
         depth={0}
-        onClick={() => onSelect({ type: "project", id: project.id, data: project })}
+        onClick={() => handleNonChunkClick({ type: "project", id: project.id, data: project })}
         onToggle={() => toggleNode("project")}
         testId="tree-project"
       />
@@ -153,11 +227,11 @@ export function ProjectTree({ project, selection, onSelect }: ProjectTreeProps) 
                 label={chapter.title || `Chapter ${chapter.chapterIndex + 1}`}
                 sublabel={`${chunkCount} chunks`}
                 status={chapter.status}
-                isSelected={selection?.type === "chapter" && selection.id === chapter.id}
+                isSelected={selectedChunkIds.size === 0 && selection?.type === "chapter" && selection.id === chapter.id}
                 isExpanded={isChapterExpanded}
                 hasChildren={sections.length > 0}
                 depth={1}
-                onClick={() => onSelect({ type: "chapter", id: chapter.id, data: chapter })}
+                onClick={() => handleNonChunkClick({ type: "chapter", id: chapter.id, data: chapter })}
                 onToggle={() => toggleNode(chapterId)}
                 testId={`tree-chapter-${chapter.id}`}
               />
@@ -175,11 +249,11 @@ export function ProjectTree({ project, selection, onSelect }: ProjectTreeProps) 
                         label={section.title ? `Sec ${section.sectionIndex + 1}: ${section.title}` : `Sec ${section.sectionIndex + 1}`}
                         sublabel={`${chunks.length} chunks`}
                         status={section.status}
-                        isSelected={selection?.type === "section" && selection.id === section.id}
+                        isSelected={selectedChunkIds.size === 0 && selection?.type === "section" && selection.id === section.id}
                         isExpanded={isSectionExpanded}
                         hasChildren={chunks.length > 0}
                         depth={2}
-                        onClick={() => onSelect({ type: "section", id: section.id, data: section })}
+                        onClick={() => handleNonChunkClick({ type: "section", id: section.id, data: section })}
                         onToggle={() => toggleNode(sectionId)}
                         testId={`tree-section-${section.id}`}
                       />
@@ -192,10 +266,13 @@ export function ProjectTree({ project, selection, onSelect }: ProjectTreeProps) 
                             label={chunk.text.substring(0, 50) + (chunk.text.length > 50 ? "..." : "")}
                             sublabel={chunk.emotion || undefined}
                             status="segmented"
-                            isSelected={selection?.type === "chunk" && selection.id === chunk.id}
+                            isSelected={
+                              selectedChunkIds.has(chunk.id) ||
+                              (selectedChunkIds.size === 0 && selection?.type === "chunk" && selection.id === chunk.id)
+                            }
                             hasChildren={false}
                             depth={3}
-                            onClick={() => onSelect({ type: "chunk", id: chunk.id, data: chunk })}
+                            onClick={(e) => handleChunkClick(e, chunk)}
                             testId={`tree-chunk-${chunk.id}`}
                           />
                         ))}

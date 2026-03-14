@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ProjectTree, type TreeSelection } from "@/components/ProjectTree";
 import { ProjectDetailPanel } from "@/components/ProjectDetailPanel";
-import type { ProjectData } from "@shared/schema";
+import { BulkOverridePanel } from "@/components/BulkOverridePanel";
+import type { ProjectData, ProjectChunk } from "@shared/schema";
 
 interface ProjectEditorProps {
   projectId: string;
@@ -17,6 +18,8 @@ interface ProjectEditorProps {
 export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
   const queryClient = useQueryClient();
   const [selection, setSelection] = useState<TreeSelection | null>(null);
+  const [selectedChunkIds, setSelectedChunkIds] = useState<Set<string>>(new Set());
+  const [selectedChunks, setSelectedChunks] = useState<ProjectChunk[]>([]);
 
   const {
     data: project,
@@ -72,6 +75,16 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId] });
   };
 
+  const handleMultiSelect = useCallback((chunkIds: Set<string>, chunks: ProjectChunk[]) => {
+    setSelectedChunkIds(chunkIds);
+    setSelectedChunks(chunks);
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedChunkIds(new Set());
+    setSelectedChunks([]);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="max-w-6xl mx-auto space-y-4">
@@ -102,6 +115,8 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
     );
   }
 
+  const showBulkPanel = selectedChunkIds.size > 1;
+
   return (
     <div className="max-w-6xl mx-auto space-y-4" data-testid="project-editor">
       <div className="flex items-center gap-3">
@@ -122,7 +137,9 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
               <ProjectTree
                 project={project}
                 selection={selection}
+                selectedChunkIds={selectedChunkIds}
                 onSelect={setSelection}
+                onMultiSelect={handleMultiSelect}
               />
             </div>
           </ScrollArea>
@@ -131,7 +148,15 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
         <Card className="col-span-12 md:col-span-8">
           <ScrollArea className="h-[calc(100vh-200px)]">
             <div className="p-4">
-              {selection ? (
+              {showBulkPanel ? (
+                <BulkOverridePanel
+                  selectedChunks={selectedChunks}
+                  selectedChunkIds={selectedChunkIds}
+                  project={project}
+                  onRefresh={handleRefresh}
+                  onClearSelection={handleClearSelection}
+                />
+              ) : selection ? (
                 <ProjectDetailPanel
                   selection={selection}
                   project={project}
