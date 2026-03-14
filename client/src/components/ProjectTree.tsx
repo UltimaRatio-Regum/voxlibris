@@ -132,6 +132,18 @@ export function ProjectTree({ project, selection, selectedChunkIds, onSelect, on
     return result;
   }, [project]);
 
+  const findSectionChunksForChunk = useCallback((chunkId: string): ProjectChunk[] => {
+    for (const ch of project.chapters || []) {
+      for (const sec of ch.sections || []) {
+        const chunks = sec.chunks || [];
+        if (chunks.some(c => c.id === chunkId)) {
+          return chunks;
+        }
+      }
+    }
+    return [];
+  }, [project]);
+
   const handleChunkClick = useCallback((e: React.MouseEvent, chunk: ProjectChunk) => {
     const isCtrl = e.ctrlKey || e.metaKey;
     const isShift = e.shiftKey;
@@ -164,26 +176,33 @@ export function ProjectTree({ project, selection, selectedChunkIds, onSelect, on
         onMultiSelect(newSet, selectedChunks);
       }
     } else if (isShift && lastClickedChunkRef.current) {
-      const all = allChunksFlat();
-      const lastIdx = all.findIndex(c => c.id === lastClickedChunkRef.current);
-      const currentIdx = all.findIndex(c => c.id === chunk.id);
+      const sectionChunks = findSectionChunksForChunk(chunk.id);
+      const lastIdx = sectionChunks.findIndex(c => c.id === lastClickedChunkRef.current);
+      const currentIdx = sectionChunks.findIndex(c => c.id === chunk.id);
       if (lastIdx >= 0 && currentIdx >= 0) {
         const start = Math.min(lastIdx, currentIdx);
         const end = Math.max(lastIdx, currentIdx);
-        const rangeChunks = all.slice(start, end + 1);
+        const rangeChunks = sectionChunks.slice(start, end + 1);
         const newSet = new Set(selectedChunkIds);
         for (const c of rangeChunks) {
           newSet.add(c.id);
         }
-        const selectedChunks = all.filter(c => newSet.has(c.id));
-        onMultiSelect(newSet, selectedChunks);
+        const all = allChunksFlat();
+        const selected = all.filter(c => newSet.has(c.id));
+        onMultiSelect(newSet, selected);
+      } else {
+        const newSet = new Set(selectedChunkIds);
+        newSet.add(chunk.id);
+        const all = allChunksFlat();
+        const selected = all.filter(c => newSet.has(c.id));
+        onMultiSelect(newSet, selected);
       }
     } else {
       lastClickedChunkRef.current = chunk.id;
       onMultiSelect(new Set(), []);
       onSelect({ type: "chunk", id: chunk.id, data: chunk });
     }
-  }, [selectedChunkIds, selection, onSelect, onMultiSelect, allChunksFlat]);
+  }, [selectedChunkIds, selection, onSelect, onMultiSelect, allChunksFlat, findSectionChunksForChunk]);
 
   const handleNonChunkClick = useCallback((sel: TreeSelection) => {
     lastClickedChunkRef.current = null;
