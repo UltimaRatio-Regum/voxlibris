@@ -1143,7 +1143,7 @@ function SectionDetailPanel({ section, project, onRefresh }: { section: ProjectS
         </div>
       )}
 
-      {section.hasRawText && (
+      {section.hasRawText && (section.status === "segmented" || section.status === "failed") && (
         <div className="space-y-2 pt-2">
           <h3 className="text-sm font-semibold">Re-chunk Section</h3>
           <p className="text-xs text-muted-foreground">

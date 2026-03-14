@@ -552,9 +552,7 @@ async def rechunk_section(project_id: str, section_id: str, model: str = DEFAULT
                         context, model, base_url, api_key
                     )
 
-                    db.query(ProjectChunk).filter(ProjectChunk.section_id == section.id).delete()
-                    db.flush()
-
+                    new_chunks = []
                     chunk_idx = 0
                     new_speakers = []
                     for speaker in result.get("detectedSpeakers", []):
@@ -572,7 +570,7 @@ async def rechunk_section(project_id: str, section_id: str, model: str = DEFAULT
                         sub_texts = _rechunk_segment(seg_text)
                         for st in sub_texts:
                             wc = len(st.split())
-                            chunk = ProjectChunk(
+                            new_chunks.append(ProjectChunk(
                                 id=str(uuid.uuid4()),
                                 section_id=section.id,
                                 chunk_index=chunk_idx,
@@ -582,9 +580,12 @@ async def rechunk_section(project_id: str, section_id: str, model: str = DEFAULT
                                 emotion=emotion,
                                 word_count=wc,
                                 approx_duration_seconds=round(wc / WORDS_PER_SECOND, 1),
-                            )
-                            db.add(chunk)
+                            ))
                             chunk_idx += 1
+
+                    db.query(ProjectChunk).filter(ProjectChunk.section_id == section.id).delete()
+                    for chunk in new_chunks:
+                        db.add(chunk)
 
                     section.status = "segmented"
                     section.error_message = None
@@ -599,8 +600,6 @@ async def rechunk_section(project_id: str, section_id: str, model: str = DEFAULT
                 except Exception as e:
                     last_error = e
                     db.rollback()
-                    db.query(ProjectChunk).filter(ProjectChunk.section_id == section.id).delete()
-                    db.commit()
                     if attempt < max_attempts:
                         logger.warning(f"Re-chunk attempt {attempt}/{max_attempts} failed for section {section_id}: {e}. Retrying...")
                         await asyncio.sleep(1)
