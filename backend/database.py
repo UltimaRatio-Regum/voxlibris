@@ -237,6 +237,7 @@ class Project(Base):
     status = Column(String, nullable=False, default=ProjectStatus.DRAFT.value)
     tts_engine = Column(String, nullable=False, default="edge-tts")
     narrator_voice_id = Column(String, nullable=True)
+    narrator_speed = Column(Float, nullable=False, default=1.0)
     base_voice_id = Column(String, nullable=True)
     exaggeration = Column(Float, nullable=False, default=0.5)
     pause_duration = Column(Float, nullable=False, default=500.0)
@@ -359,6 +360,7 @@ def _migrate_columns(db_engine):
         ("voice_library", "user_id", "ALTER TABLE voice_library ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
         ("voice_library", "is_shared", "ALTER TABLE voice_library ADD COLUMN is_shared BOOLEAN NOT NULL DEFAULT true"),
         ("tts_jobs", "user_id", "ALTER TABLE tts_jobs ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
+        ("projects", "narrator_speed", "ALTER TABLE projects ADD COLUMN narrator_speed FLOAT NOT NULL DEFAULT 1.0"),
     ]
     
     with db_engine.connect() as conn:

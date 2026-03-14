@@ -147,6 +147,7 @@ class TTSService:
                     speed_factor = speaker_config.speedFactor
             else:
                 voice_id = config.narratorVoiceId
+                speed_factor = getattr(config, 'narratorSpeed', 1.0) or 1.0
             
             # Parse voice ID prefixes for different TTS engines
             voice_path = None

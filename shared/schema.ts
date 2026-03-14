@@ -315,6 +315,7 @@ export const projectSchema = z.object({
   status: projectStatusSchema,
   ttsEngine: z.string(),
   narratorVoiceId: z.string().nullable(),
+  narratorSpeed: z.number().default(1.0),
   baseVoiceId: z.string().nullable().optional(),
   exaggeration: z.number(),
   pauseDuration: z.number(),

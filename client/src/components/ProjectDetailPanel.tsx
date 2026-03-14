@@ -309,6 +309,7 @@ function ProjectSettingsPanel({
 
   const [ttsEngine, setTtsEngine] = useState(project.ttsEngine || "edge-tts");
   const [narratorVoice, setNarratorVoice] = useState(project.narratorVoiceId || "");
+  const [narratorSpeed, setNarratorSpeed] = useState(project.narratorSpeed ?? 1.0);
   const [baseVoiceId, setBaseVoiceId] = useState(project.baseVoiceId || "");
   const [exaggeration, setExaggeration] = useState(project.exaggeration ?? 0.5);
   const [pauseDuration, setPauseDuration] = useState(project.pauseDuration ?? 500);
@@ -377,6 +378,7 @@ function ProjectSettingsPanel({
   useEffect(() => {
     setTtsEngine(project.ttsEngine || "edge-tts");
     setNarratorVoice(project.narratorVoiceId || "");
+    setNarratorSpeed(project.narratorSpeed ?? 1.0);
     setBaseVoiceId(project.baseVoiceId || "");
     setExaggeration(project.exaggeration ?? 0.5);
     setPauseDuration(project.pauseDuration ?? 500);
@@ -409,6 +411,7 @@ function ProjectSettingsPanel({
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
         ttsEngine,
         narratorVoiceId: narratorVoice || null,
+        narratorSpeed,
         baseVoiceId: baseVoiceId || null,
         exaggeration,
         pauseDuration,
@@ -469,6 +472,7 @@ function ProjectSettingsPanel({
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
         ttsEngine,
         narratorVoiceId: narratorVoice || null,
+        narratorSpeed,
         baseVoiceId: baseVoiceId || null,
         exaggeration,
         pauseDuration,
@@ -560,6 +564,23 @@ function ProjectSettingsPanel({
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Narrator Speed</Label>
+            <span className="text-xs font-mono text-muted-foreground" data-testid="text-narrator-speed">
+              {narratorSpeed.toFixed(2)}x
+            </span>
+          </div>
+          <Slider
+            value={[narratorSpeed]}
+            min={0.7}
+            max={1.3}
+            step={0.05}
+            onValueChange={([v]) => setNarratorSpeed(v)}
+            data-testid="slider-narrator-speed"
+          />
         </div>
 
         {(() => {
@@ -706,6 +727,28 @@ function ProjectSettingsPanel({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Speed</Label>
+                      <span className="text-xs font-mono text-muted-foreground" data-testid={`text-speed-${name}`}>
+                        {(config.speedFactor ?? 1.0).toFixed(2)}x
+                      </span>
+                    </div>
+                    <Slider
+                      value={[config.speedFactor ?? 1.0]}
+                      min={0.7}
+                      max={1.3}
+                      step={0.05}
+                      onValueChange={([v]) =>
+                        setSpeakerConfigs((prev) => ({
+                          ...prev,
+                          [name]: { ...config, speedFactor: v },
+                        }))
+                      }
+                      data-testid={`slider-speed-${name}`}
+                    />
                   </div>
                 </div>
               );

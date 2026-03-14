@@ -137,6 +137,7 @@ async def process_job(job_id: str, cancel_token: threading.Event = None):
 
     tts_engine = config.get("ttsEngine", "edge-tts")
     narrator_voice_id = config.get("narratorVoiceId")
+    narrator_speed = config.get("narratorSpeed", 1.0) or 1.0
     base_voice_id = config.get("baseVoiceId")
     speakers = config.get("speakers", {})
     exaggeration = config.get("defaultExaggeration", 0.5)
@@ -188,10 +189,14 @@ async def process_job(job_id: str, cancel_token: threading.Event = None):
                 update_segment_status(segment_id, SegmentStatus.PROCESSING)
                 
                 voice_id = narrator_voice_id
+                speed_factor = narrator_speed
+                pitch_offset = 0.0
                 if seg_data.get("speaker") and seg_data["speaker"] in speakers:
                     speaker_config = speakers[seg_data["speaker"]]
                     if speaker_config.get("voiceSampleId"):
                         voice_id = speaker_config["voiceSampleId"]
+                    speed_factor = speaker_config.get("speedFactor", 1.0) or 1.0
+                    pitch_offset = speaker_config.get("pitchOffset", 0.0) or 0.0
                 
                 audio = await generate_segment_audio(
                     tts_service=tts_service,
@@ -207,6 +212,10 @@ async def process_job(job_id: str, cancel_token: threading.Event = None):
                 
                 if audio is None or len(audio) == 0:
                     raise RuntimeError("TTS returned empty audio")
+                
+                if abs(speed_factor - 1.0) > 0.01 or abs(pitch_offset) > 0.01:
+                    audio = audio_processor.apply_time_stretch(audio, tts_service.sample_rate, speed_factor) if abs(speed_factor - 1.0) > 0.01 else audio
+                    audio = audio_processor.apply_pitch_shift(audio, tts_service.sample_rate, pitch_offset) if abs(pitch_offset) > 0.01 else audio
                 
                 if seg_data.get("sentiment") and seg_data["sentiment"].get("label"):
                     audio = audio_processor.apply_emotion_prosody(

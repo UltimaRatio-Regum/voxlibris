@@ -32,6 +32,7 @@ class SpeakerConfig(BaseModel):
 
 class ProjectConfig(BaseModel):
     narratorVoiceId: Optional[str] = None
+    narratorSpeed: float = 1.0
     defaultExaggeration: float = 0.5
     pauseBetweenSegments: int = 500
     speakers: dict[str, SpeakerConfig] = {}

@@ -1994,6 +1994,7 @@ class CreateProjectRequest(BaseModel):
 class UpdateProjectSettingsRequest(BaseModel):
     ttsEngine: Optional[str] = None
     narratorVoiceId: Optional[str] = None
+    narratorSpeed: Optional[float] = None
     baseVoiceId: Optional[str] = None
     exaggeration: Optional[float] = None
     pauseDuration: Optional[float] = None
@@ -2140,6 +2141,7 @@ def _serialize_project_full(project: Project, db) -> dict:
         "status": project.status,
         "ttsEngine": project.tts_engine,
         "narratorVoiceId": project.narrator_voice_id,
+        "narratorSpeed": project.narrator_speed if hasattr(project, 'narrator_speed') and project.narrator_speed is not None else 1.0,
         "baseVoiceId": project.base_voice_id,
         "exaggeration": project.exaggeration,
         "pauseDuration": project.pause_duration,
@@ -2282,6 +2284,8 @@ async def update_project(project_id: str, request: UpdateProjectSettingsRequest,
             project.tts_engine = request.ttsEngine
         if request.narratorVoiceId is not None:
             project.narrator_voice_id = request.narratorVoiceId
+        if request.narratorSpeed is not None:
+            project.narrator_speed = max(0.5, min(2.0, request.narratorSpeed))
         if request.baseVoiceId is not None:
             project.base_voice_id = request.baseVoiceId
         if request.exaggeration is not None:
@@ -2681,6 +2685,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "speakers": speakers,
                     "ttsEngine": tts_engine,
                     "narratorVoiceId": narrator_voice_id,
+                    "narratorSpeed": getattr(project, 'narrator_speed', 1.0) or 1.0,
                     "baseVoiceId": base_voice_id,
                     "narratorEmotion": narrator_emotion,
                     "dialogueEmotionMode": dialogue_emotion_mode,
@@ -2725,6 +2730,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "speakers": speakers,
                     "ttsEngine": tts_engine,
                     "narratorVoiceId": narrator_voice_id,
+                    "narratorSpeed": getattr(project, 'narrator_speed', 1.0) or 1.0,
                     "baseVoiceId": base_voice_id,
                     "narratorEmotion": narrator_emotion,
                     "dialogueEmotionMode": dialogue_emotion_mode,
@@ -2809,6 +2815,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                         "speakers": speakers,
                         "ttsEngine": tts_engine,
                         "narratorVoiceId": narrator_voice_id,
+                        "narratorSpeed": getattr(project, 'narrator_speed', 1.0) or 1.0,
                         "baseVoiceId": base_voice_id,
                         "narratorEmotion": narrator_emotion,
                         "dialogueEmotionMode": dialogue_emotion_mode,
