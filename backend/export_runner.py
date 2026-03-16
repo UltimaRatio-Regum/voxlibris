@@ -73,8 +73,13 @@ def _run_export(job_id: str):
             ProjectChapter.project_id == project.id
         ).order_by(ProjectChapter.chapter_index).all()
 
+        job.total_segments = len(chapters)
+        job.completed_segments = 0
+        job.updated_at = datetime.utcnow()
+        db.commit()
+
         chapter_audio = []
-        for ch in chapters:
+        for ch_idx, ch in enumerate(chapters):
             sections = db.query(ProjectSection).filter(
                 ProjectSection.chapter_id == ch.id
             ).order_by(ProjectSection.section_index).all()
@@ -98,6 +103,10 @@ def _run_export(job_id: str):
 
             chapter_audio.append((ch.title or f"Chapter {ch.chapter_index + 1}", blobs))
 
+            job.completed_segments = ch_idx + 1
+            job.updated_at = datetime.utcnow()
+            db.commit()
+
         total_blobs = sum(len(blobs) for _, blobs in chapter_audio)
         if total_blobs == 0:
             job.status = JobStatus.FAILED.value
@@ -105,6 +114,10 @@ def _run_export(job_id: str):
             job.updated_at = datetime.utcnow()
             db.commit()
             return
+
+        job.error_message = "Encoding audio..."
+        job.updated_at = datetime.utcnow()
+        db.commit()
 
         cover = project.meta_cover_image if project.meta_cover_image else None
         pause_ms = int(project.pause_duration) if project.pause_duration else 500
@@ -157,8 +170,7 @@ def _run_export(job_id: str):
 
         job.output_audio_file_id = audio_file.id
         job.status = JobStatus.COMPLETED.value
-        job.completed_segments = 1
-        job.total_segments = 1
+        job.error_message = None
         job.updated_at = datetime.utcnow()
         db.commit()
 

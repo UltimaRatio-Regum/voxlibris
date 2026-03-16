@@ -103,11 +103,12 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
         filtered.sort((a, b) => (sectionOrder.get(a.scopeId) ?? 0) - (sectionOrder.get(b.scopeId) ?? 0));
       }
     } else if (selection.type === "project") {
+      const exportFiles = allAudio.filter(af => af.scopeType === "export");
       const chapters = project.chapters || [];
       const chapterIds = chapters.map(c => c.id);
-      filtered = allAudio.filter(af => af.scopeType === "chapter" && chapterIds.includes(af.scopeId));
+      let chapterFiles = allAudio.filter(af => af.scopeType === "chapter" && chapterIds.includes(af.scopeId));
       const chapterOrder = new Map(chapterIds.map((id, idx) => [id, idx]));
-      if (filtered.length === 0) {
+      if (chapterFiles.length === 0) {
         const sectionIdToChapterIdx = new Map<string, number>();
         let sectionOrder = 0;
         const sectionSortKey = new Map<string, number>();
@@ -118,11 +119,12 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
             sectionSortKey.set(sec.id, sectionOrder++);
           }
         }
-        filtered = allAudio.filter(af => af.scopeType === "section" && sectionIdToChapterIdx.has(af.scopeId));
-        filtered.sort((a, b) => (sectionSortKey.get(a.scopeId) ?? 0) - (sectionSortKey.get(b.scopeId) ?? 0));
+        chapterFiles = allAudio.filter(af => af.scopeType === "section" && sectionIdToChapterIdx.has(af.scopeId));
+        chapterFiles.sort((a, b) => (sectionSortKey.get(a.scopeId) ?? 0) - (sectionSortKey.get(b.scopeId) ?? 0));
       } else {
-        filtered.sort((a, b) => (chapterOrder.get(a.scopeId) ?? 0) - (chapterOrder.get(b.scopeId) ?? 0));
+        chapterFiles.sort((a, b) => (chapterOrder.get(a.scopeId) ?? 0) - (chapterOrder.get(b.scopeId) ?? 0));
       }
+      filtered = [...exportFiles, ...chapterFiles];
     } else {
       filtered = [];
     }

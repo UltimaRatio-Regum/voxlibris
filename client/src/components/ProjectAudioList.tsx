@@ -49,8 +49,8 @@ function AudioFileEntry({ audio, projectId, onDelete }: { audio: ProjectAudioFil
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const label = audio.label?.replace(/[^a-zA-Z0-9_\- ]/g, "") || "audio";
-      a.download = `${label}.wav`;
+      const label = audio.label || "audio";
+      a.download = label;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -75,10 +75,12 @@ function AudioFileEntry({ audio, projectId, onDelete }: { audio: ProjectAudioFil
 
   const audioUrl = `/api/projects/${projectId}/audio/${audio.id}`;
   const isCombined = audio.scopeType !== "chunk";
+  const isPlayable = audio.format !== "zip";
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border bg-card" data-testid={`audio-entry-${audio.id}`}>
       <div className="flex items-center gap-1 shrink-0">
+        {isPlayable && (
         <Button
           variant="outline"
           size="sm"
@@ -88,6 +90,7 @@ function AudioFileEntry({ audio, projectId, onDelete }: { audio: ProjectAudioFil
         >
           {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
         </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -118,6 +121,7 @@ function AudioFileEntry({ audio, projectId, onDelete }: { audio: ProjectAudioFil
         </Button>
       </div>
 
+      {isPlayable && (
       <audio
         ref={audioRef}
         src={audioUrl}
@@ -125,6 +129,7 @@ function AudioFileEntry({ audio, projectId, onDelete }: { audio: ProjectAudioFil
         onPause={() => setIsPlaying(false)}
         onPlay={() => setIsPlaying(true)}
       />
+      )}
 
       <div className="flex-1 min-w-0 space-y-1">
         {audio.label && (

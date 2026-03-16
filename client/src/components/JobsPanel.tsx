@@ -292,7 +292,11 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                       <span>
                         {job.jobType === "export"
-                          ? (job.status === "processing" ? "Exporting..." : job.status === "completed" ? "Export ready" : job.status)
+                          ? (job.status === "completed"
+                              ? "Export ready"
+                              : job.totalSegments > 0
+                                ? `${job.completedSegments}/${job.totalSegments} chapters`
+                                : "Preparing...")
                           : `${job.completedSegments}/${job.totalSegments} segments`
                         }
                       </span>

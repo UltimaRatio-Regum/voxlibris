@@ -94,10 +94,7 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
 def _serialize_job(job: TTSJob) -> Dict[str, Any]:
     """Serialize a TTSJob to a dict for API responses."""
     job_type = getattr(job, 'job_type', 'tts') or 'tts'
-    if job_type == "export":
-        progress = 100.0 if job.status == JobStatus.COMPLETED.value else (50.0 if job.status == JobStatus.PROCESSING.value else 0.0)
-    else:
-        progress = (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0
+    progress = (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0
     return {
         "id": job.id,
         "title": job.title,
