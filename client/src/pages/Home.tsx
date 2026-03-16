@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles, List, Settings, BookOpen, Users, LogOut, Key, Shield } from "lucide-react";
+import { Sparkles, List, Settings, BookOpen, Users, LogOut, Key, Shield, HelpCircle } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ProjectWizardTab } from "@/components/ProjectWizardTab";
 import { JobsPanel } from "@/components/JobsPanel";
@@ -63,6 +63,12 @@ export default function Home() {
             />
           </div>
           <div className="flex items-center gap-3">
+            <a href="/docs">
+              <Button variant="ghost" size="sm" className="gap-1.5" data-testid="link-docs">
+                <HelpCircle className="h-4 w-4" />
+                <span className="hidden sm:inline">Docs</span>
+              </Button>
+            </a>
             <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

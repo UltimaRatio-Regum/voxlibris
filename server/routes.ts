@@ -2,6 +2,9 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import express from "express";
+import fs from "fs";
+import path from "path";
+import matter from "gray-matter";
 import { parseTextWithLLM, parseTextWithLLMStreaming, getAvailableModels, isOpenRouterConfigured, invalidatePromptCache } from "./llm-service";
 import { ensureAuthenticated, ensureAdmin } from "./auth";
 
@@ -256,6 +259,53 @@ export async function registerRoutes(
       res.json(data);
     } catch (error) {
       res.status(500).json({ error: 'Failed to reset parsing prompt' });
+    }
+  });
+
+  const DOCS_DIR = path.resolve(process.cwd(), "docs");
+
+  function getDocsManifest() {
+    if (!fs.existsSync(DOCS_DIR)) return [];
+    const files = fs.readdirSync(DOCS_DIR).filter(f => f.endsWith('.md'));
+    return files.map(filename => {
+      const raw = fs.readFileSync(path.join(DOCS_DIR, filename), 'utf-8');
+      const { data } = matter(raw);
+      if (!data.title) return null;
+      const slug = filename.replace(/^\d+-/, '').replace(/\.md$/, '');
+      return {
+        slug,
+        filename,
+        title: data.title,
+        description: data.description || '',
+        category: data.category || 'General',
+        order: data.order || 99,
+        keywords: data.keywords || [],
+      };
+    }).filter(Boolean).sort((a: any, b: any) => a.order - b.order);
+  }
+
+  app.get('/api/docs/manifest', (_req: Request, res: Response) => {
+    try {
+      const manifest = getDocsManifest();
+      res.json(manifest);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to read documentation' });
+    }
+  });
+
+  app.get('/api/docs/:slug', (req: Request, res: Response) => {
+    try {
+      const { slug } = req.params;
+      const manifest = getDocsManifest();
+      const entry = manifest.find(m => m.slug === slug);
+      if (!entry) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+      const raw = fs.readFileSync(path.join(DOCS_DIR, entry.filename), 'utf-8');
+      const { content } = matter(raw);
+      res.json({ ...entry, content });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to read document' });
     }
   });
 
