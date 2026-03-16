@@ -172,24 +172,28 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
 
   const [downloadingJobId, setDownloadingJobId] = useState<string | null>(null);
 
-  const downloadJobAudio = async (jobId: string) => {
-    const maxSilenceMs = localStorage.getItem("voxlibris-max-silence-ms") || "300";
-    setDownloadingJobId(jobId);
+  const downloadJobAudio = async (job: TTSJob) => {
+    setDownloadingJobId(job.id);
     toast({ title: "Preparing download..." });
     try {
-      const response = await fetch(`/api/jobs/${jobId}/audio?max_silence_ms=${maxSilenceMs}`, {
-        credentials: "include",
-      });
+      let url: string;
+      if (job.jobType === "export" && job.outputAudioFileId && job.projectId) {
+        url = `/api/projects/${job.projectId}/audio/${job.outputAudioFileId}`;
+      } else {
+        const maxSilenceMs = localStorage.getItem("voxlibris-max-silence-ms") || "300";
+        url = `/api/jobs/${job.id}/audio?max_silence_ms=${maxSilenceMs}`;
+      }
+      const response = await fetch(url, { credentials: "include" });
       if (!response.ok) throw new Error("Download failed");
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = blobUrl;
       const disposition = response.headers.get("content-disposition");
       const match = disposition?.match(/filename="?(.+?)"?$/);
-      a.download = match?.[1] || `job-${jobId}.wav`;
+      a.download = match?.[1] || (job.jobType === "export" ? `export-${job.id}` : `job-${job.id}.wav`);
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(blobUrl);
       toast({ title: "Download complete" });
     } catch {
       toast({ title: "Download failed", description: "Could not download audio", variant: "destructive" });
@@ -287,7 +291,10 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                     {job.status !== "waiting" && (
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                       <span>
-                        {job.completedSegments}/{job.totalSegments} segments
+                        {job.jobType === "export"
+                          ? (job.status === "processing" ? "Exporting..." : job.status === "completed" ? "Export ready" : job.status)
+                          : `${job.completedSegments}/${job.totalSegments} segments`
+                        }
                       </span>
                       <span>{Math.round(job.progress)}%</span>
                     </div>
@@ -302,7 +309,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => downloadJobAudio(job.id)}
+                        onClick={() => downloadJobAudio(job)}
                         disabled={downloadingJobId === job.id}
                         data-testid={`job-download-${job.id}`}
                       >
@@ -314,7 +321,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                         {downloadingJobId === job.id ? "Downloading..." : "Download"}
                       </Button>
                     )}
-                    {(job.status === "failed" || job.status === "cancelled") && (
+                    {(job.status === "failed" || job.status === "cancelled") && job.jobType !== "export" && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -354,6 +361,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                   </div>
 
                   <CollapsibleContent>
+                    {job.jobType !== "export" && (
                     <div className="mt-3 pt-3 border-t space-y-1.5 pl-6">
                       <div className="text-xs font-medium text-muted-foreground mb-2">
                         Segments:
@@ -397,6 +405,17 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
                         </div>
                       )}
                     </div>
+                    )}
+                    {job.jobType === "export" && (
+                      <div className="mt-3 pt-3 border-t pl-6">
+                        <div className="text-xs text-muted-foreground">
+                          {job.exportFormat && <span>Format: {job.exportFormat.toUpperCase()}</span>}
+                          {job.errorMessage && job.status === "failed" && (
+                            <p className="text-destructive mt-1">{job.errorMessage}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </CollapsibleContent>
                 </div>
               </Collapsible>

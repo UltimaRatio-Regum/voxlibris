@@ -1240,6 +1240,8 @@ async def startup_event():
 def _reset_orphaned_waiting_jobs():
     """Reset any jobs stuck in WAITING/PROCESSING and re-queue PENDING jobs from a previous process."""
     from job_runner import start_job_async
+    from export_runner import _run_export
+    import threading
     db = get_db_session()
     try:
         orphaned = db.query(TTSJob).filter(
@@ -1255,14 +1257,25 @@ def _reset_orphaned_waiting_jobs():
         pending = db.query(TTSJob).filter(
             TTSJob.status == JobStatus.PENDING.value
         ).order_by(TTSJob.created_at.asc()).all()
-        pending_ids = [job.id for job in pending]
+        tts_pending_ids = []
+        export_pending_ids = []
+        for job in pending:
+            jt = getattr(job, 'job_type', 'tts') or 'tts'
+            if jt == "export":
+                export_pending_ids.append(job.id)
+            else:
+                tts_pending_ids.append(job.id)
     finally:
         db.close()
 
-    if pending_ids:
-        logger.info(f"Re-queuing {len(pending_ids)} pending jobs through engine mutex")
-        for job_id in pending_ids:
+    if tts_pending_ids:
+        logger.info(f"Re-queuing {len(tts_pending_ids)} pending TTS jobs through engine mutex")
+        for job_id in tts_pending_ids:
             start_job_async(job_id)
+    if export_pending_ids:
+        logger.info(f"Re-queuing {len(export_pending_ids)} pending export jobs")
+        for job_id in export_pending_ids:
+            threading.Thread(target=_run_export, args=(job_id,), daemon=True).start()
 
 
 class CreateJobRequest(BaseModel):
@@ -2925,8 +2938,18 @@ async def get_project_audio(project_id: str, audio_file_id: str, request: FastAP
         if not af:
             raise HTTPException(status_code=404, detail="Audio file not found")
 
-        media_type = "audio/mpeg" if af.format == "mp3" else "audio/wav"
-        return Response(content=af.audio_data, media_type=media_type)
+        format_map = {
+            "mp3": "audio/mpeg",
+            "wav": "audio/wav",
+            "m4b": "audio/x-m4b",
+            "zip": "application/zip",
+        }
+        media_type = format_map.get(af.format, "application/octet-stream")
+        headers = {}
+        if af.label:
+            safe_label = af.label.replace('"', '\\"')
+            headers["Content-Disposition"] = f'attachment; filename="{safe_label}"'
+        return Response(content=af.audio_data, media_type=media_type, headers=headers)
     finally:
         db.close()
 
@@ -3172,90 +3195,41 @@ async def get_project_audio_stats(project_id: str):
         db.close()
 
 
-@app.get("/projects/{project_id}/export")
-async def export_project(project_id: str, request: FastAPIRequest, format: str = "mp3"):
-    from backend.audio_export import export_single_mp3, export_mp3_per_chapter, export_m4b
+@app.post("/projects/{project_id}/export")
+async def export_project_async(project_id: str, request: FastAPIRequest):
+    from export_runner import create_export_job
 
     user_id, user_role = _get_user_info(request)
-    if format not in ("mp3", "mp3-chapters", "m4b"):
-        raise HTTPException(status_code=400, detail="Invalid format. Use: mp3, mp3-chapters, m4b")
-
     db = get_db_session()
     try:
-        project = _require_project_access(db, user_id, user_role, project_id)
+        _require_project_access(db, user_id, user_role, project_id)
+    finally:
+        db.close()
 
-        chapters = db.query(ProjectChapter).filter(
-            ProjectChapter.project_id == project_id
-        ).order_by(ProjectChapter.chapter_index).all()
+    body = await request.json()
+    export_format = body.get("format", "mp3")
+    if export_format not in ("mp3", "mp3-chapters", "m4b"):
+        raise HTTPException(status_code=400, detail="Invalid format. Use: mp3, mp3-chapters, m4b")
 
-        chapter_audio = []
-        for ch in chapters:
-            sections = db.query(ProjectSection).filter(
-                ProjectSection.chapter_id == ch.id
-            ).order_by(ProjectSection.section_index).all()
+    job = create_export_job(project_id, export_format, user_id)
+    return job
 
-            chunk_ids = []
-            for sec in sections:
-                chunks = db.query(ProjectChunk).filter(
-                    ProjectChunk.section_id == sec.id
-                ).order_by(ProjectChunk.chunk_index).all()
-                chunk_ids.extend([c.id for c in chunks])
 
-            blobs = []
-            for cid in chunk_ids:
-                af = db.query(ProjectAudioFile).filter(
-                    ProjectAudioFile.project_id == project_id,
-                    ProjectAudioFile.scope_type == "chunk",
-                    ProjectAudioFile.scope_id == cid,
-                ).order_by(ProjectAudioFile.created_at.desc()).first()
-                if af and af.audio_data:
-                    blobs.append(af.audio_data)
-
-            chapter_audio.append((ch.title or f"Chapter {ch.chapter_index + 1}", blobs))
-
-        total_blobs = sum(len(blobs) for _, blobs in chapter_audio)
-        if total_blobs == 0:
-            raise HTTPException(status_code=400, detail="No audio generated yet. Generate audio before exporting.")
-
-        cover = project.meta_cover_image if project.meta_cover_image else None
-        pause_ms = int(project.pause_duration) if project.pause_duration else 500
-
-        kwargs = dict(
-            chapter_audio=chapter_audio,
-            title=project.title,
-            pause_ms=pause_ms,
-            author=project.meta_author,
-            narrator=project.meta_narrator,
-            genre=project.meta_genre,
-            year=project.meta_year,
-            description=project.meta_description,
-            cover_image=cover,
-        )
-
-        safe_title = "".join(c for c in project.title if c.isalnum() or c in " _-").strip()
-
-        if format == "mp3":
-            data = export_single_mp3(**kwargs)
-            return Response(
-                content=data,
-                media_type="audio/mpeg",
-                headers={"Content-Disposition": f'attachment; filename="{safe_title}.mp3"'},
-            )
-        elif format == "mp3-chapters":
-            data = export_mp3_per_chapter(**kwargs)
-            return Response(
-                content=data,
-                media_type="application/zip",
-                headers={"Content-Disposition": f'attachment; filename="{safe_title} - Chapters.zip"'},
-            )
-        elif format == "m4b":
-            data = export_m4b(**kwargs)
-            return Response(
-                content=data,
-                media_type="audio/x-m4b",
-                headers={"Content-Disposition": f'attachment; filename="{safe_title}.m4b"'},
-            )
-
+@app.delete("/projects/{project_id}/audio/{audio_file_id}")
+async def delete_project_audio(project_id: str, audio_file_id: str, request: FastAPIRequest):
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        _require_project_access(db, user_id, user_role, project_id)
+        af = db.query(ProjectAudioFile).filter(
+            ProjectAudioFile.id == audio_file_id,
+            ProjectAudioFile.project_id == project_id
+        ).first()
+        if not af:
+            raise HTTPException(status_code=404, detail="Audio file not found")
+        db.delete(af)
+        db.commit()
+        return {"status": "deleted"}
     finally:
         db.close()
 

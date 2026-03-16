@@ -132,6 +132,10 @@ class TTSJob(Base):
     error_message = Column(Text, nullable=True)
     config_json = Column(Text, nullable=True)
     job_group_id = Column(String, nullable=True)
+    job_type = Column(String, nullable=False, default="tts")
+    project_id = Column(String, nullable=True)
+    export_format = Column(String, nullable=True)
+    output_audio_file_id = Column(String, nullable=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -363,6 +367,10 @@ def _migrate_columns(db_engine):
         ("tts_jobs", "user_id", "ALTER TABLE tts_jobs ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
         ("projects", "narrator_speed", "ALTER TABLE projects ADD COLUMN narrator_speed FLOAT NOT NULL DEFAULT 1.0"),
         ("project_sections", "raw_text", "ALTER TABLE project_sections ADD COLUMN raw_text TEXT"),
+        ("tts_jobs", "job_type", "ALTER TABLE tts_jobs ADD COLUMN job_type VARCHAR NOT NULL DEFAULT 'tts'"),
+        ("tts_jobs", "project_id", "ALTER TABLE tts_jobs ADD COLUMN project_id VARCHAR"),
+        ("tts_jobs", "export_format", "ALTER TABLE tts_jobs ADD COLUMN export_format VARCHAR"),
+        ("tts_jobs", "output_audio_file_id", "ALTER TABLE tts_jobs ADD COLUMN output_audio_file_id VARCHAR"),
     ]
     
     with db_engine.connect() as conn:

@@ -285,7 +285,7 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
           </div>
         )}
 
-        <ProjectAudioList audioFiles={audioFiles} projectId={project.id} />
+        <ProjectAudioList audioFiles={audioFiles} projectId={project.id} onDelete={onRefresh} />
       </div>
     </div>
   );
@@ -467,7 +467,7 @@ function ProjectSettingsPanel({
 
   const handleExport = async () => {
     setIsExporting(true);
-    toast({ title: "Preparing export...", description: "Saving settings and building your audiobook file." });
+    toast({ title: "Starting export...", description: "Saving settings and queuing export job." });
     try {
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
         ttsEngine,
@@ -487,22 +487,9 @@ function ProjectSettingsPanel({
         speakersJson: JSON.stringify(speakerConfigs),
       });
 
-      const res = await fetch(`/api/projects/${project.id}/export?format=${outputFormat}`);
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: "Export failed" }));
-        throw new Error(errData.detail || "Export failed");
-      }
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const match = disposition.match(/filename="(.+?)"/);
-      const filename = match ? match[1] : `${project.title}.${outputFormat === "mp3-chapters" ? "zip" : outputFormat}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "Export complete" });
+      await apiRequest("POST", `/api/projects/${project.id}/export`, { format: outputFormat });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Export job started", description: "Check the Jobs tab for progress and download." });
     } catch (error: any) {
       toast({ title: "Export failed", description: error.message, variant: "destructive" });
     } finally {

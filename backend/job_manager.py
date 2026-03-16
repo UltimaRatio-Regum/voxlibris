@@ -86,23 +86,37 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
         if not job:
             return None
         
-        return {
-            "id": job.id,
-            "title": job.title,
-            "status": job.status,
-            "totalSegments": job.total_segments,
-            "completedSegments": job.completed_segments,
-            "failedSegments": job.failed_segments,
-            "ttsEngine": job.tts_engine,
-            "narratorVoiceId": job.narrator_voice_id,
-            "errorMessage": job.error_message,
-            "jobGroupId": job.job_group_id,
-            "createdAt": job.created_at.isoformat() if job.created_at else None,
-            "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
-            "progress": (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0,
-        }
+        return _serialize_job(job)
     finally:
         db.close()
+
+
+def _serialize_job(job: TTSJob) -> Dict[str, Any]:
+    """Serialize a TTSJob to a dict for API responses."""
+    job_type = getattr(job, 'job_type', 'tts') or 'tts'
+    if job_type == "export":
+        progress = 100.0 if job.status == JobStatus.COMPLETED.value else (50.0 if job.status == JobStatus.PROCESSING.value else 0.0)
+    else:
+        progress = (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0
+    return {
+        "id": job.id,
+        "title": job.title,
+        "status": job.status,
+        "totalSegments": job.total_segments,
+        "completedSegments": job.completed_segments,
+        "failedSegments": job.failed_segments,
+        "ttsEngine": job.tts_engine,
+        "narratorVoiceId": job.narrator_voice_id,
+        "errorMessage": job.error_message,
+        "jobGroupId": job.job_group_id,
+        "jobType": job_type,
+        "projectId": getattr(job, 'project_id', None),
+        "exportFormat": getattr(job, 'export_format', None),
+        "outputAudioFileId": getattr(job, 'output_audio_file_id', None),
+        "createdAt": job.created_at.isoformat() if job.created_at else None,
+        "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
+        "progress": progress,
+    }
 
 
 def get_all_jobs(include_completed: bool = True, limit: int = 20, offset: int = 0, user_id: str = None, user_role: str = "user") -> Dict[str, Any]:
@@ -122,24 +136,7 @@ def get_all_jobs(include_completed: bool = True, limit: int = 20, offset: int = 
         total = query.count()
         jobs = query.offset(offset).limit(limit).all()
         
-        jobs_list = [
-            {
-                "id": job.id,
-                "title": job.title,
-                "status": job.status,
-                "totalSegments": job.total_segments,
-                "completedSegments": job.completed_segments,
-                "failedSegments": job.failed_segments,
-                "ttsEngine": job.tts_engine,
-                "narratorVoiceId": job.narrator_voice_id,
-                "errorMessage": job.error_message,
-                "jobGroupId": job.job_group_id,
-                "createdAt": job.created_at.isoformat() if job.created_at else None,
-                "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
-                "progress": (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0,
-            }
-            for job in jobs
-        ]
+        jobs_list = [_serialize_job(job) for job in jobs]
         return {"jobs": jobs_list, "total": total, "limit": limit, "offset": offset}
     finally:
         db.close()

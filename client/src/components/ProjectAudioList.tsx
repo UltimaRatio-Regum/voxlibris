@@ -1,12 +1,14 @@
 import { useState, useRef } from "react";
-import { Play, Pause, Volume2, Clock, Cpu, FileAudio, Download, Loader2 } from "lucide-react";
+import { Play, Pause, Volume2, Clock, Cpu, FileAudio, Download, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 import type { ProjectAudioFile } from "@shared/schema";
 
 interface ProjectAudioListProps {
   audioFiles: ProjectAudioFile[];
   projectId: string;
+  onDelete?: () => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -19,10 +21,11 @@ function formatDuration(seconds: number): string {
   return `${hrs}h ${remainMins}m`;
 }
 
-function AudioFileEntry({ audio, projectId }: { audio: ProjectAudioFile; projectId: string }) {
+function AudioFileEntry({ audio, projectId, onDelete }: { audio: ProjectAudioFile; projectId: string; onDelete?: () => void }) {
   const { toast } = useToast();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const togglePlay = () => {
@@ -57,6 +60,19 @@ function AudioFileEntry({ audio, projectId }: { audio: ProjectAudioFile; project
     }
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await apiRequest("DELETE", `/api/projects/${projectId}/audio/${audio.id}`);
+      toast({ title: "Audio file deleted" });
+      onDelete?.();
+    } catch {
+      toast({ title: "Delete failed", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const audioUrl = `/api/projects/${projectId}/audio/${audio.id}`;
   const isCombined = audio.scopeType !== "chunk";
 
@@ -84,6 +100,20 @@ function AudioFileEntry({ audio, projectId }: { audio: ProjectAudioFile; project
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <Download className="h-3.5 w-3.5" />
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+          onClick={handleDelete}
+          disabled={isDeleting}
+          data-testid={`button-delete-audio-${audio.id}`}
+        >
+          {isDeleting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
           )}
         </Button>
       </div>
@@ -130,7 +160,7 @@ function AudioFileEntry({ audio, projectId }: { audio: ProjectAudioFile; project
   );
 }
 
-export function ProjectAudioList({ audioFiles, projectId }: ProjectAudioListProps) {
+export function ProjectAudioList({ audioFiles, projectId, onDelete }: ProjectAudioListProps) {
   if (audioFiles.length === 0) {
     return (
       <div className="text-center py-6 text-sm text-muted-foreground" data-testid="text-no-audio">
@@ -143,7 +173,7 @@ export function ProjectAudioList({ audioFiles, projectId }: ProjectAudioListProp
   return (
     <div className="space-y-2" data-testid="audio-files-list">
       {audioFiles.map((audio) => (
-        <AudioFileEntry key={audio.id} audio={audio} projectId={projectId} />
+        <AudioFileEntry key={audio.id} audio={audio} projectId={projectId} onDelete={onDelete} />
       ))}
     </div>
   );
