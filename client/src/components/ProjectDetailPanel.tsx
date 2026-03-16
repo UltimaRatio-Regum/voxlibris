@@ -499,6 +499,71 @@ function ProjectSettingsPanel({
     }
   };
 
+  const handleDownloadCueSheet = () => {
+    const sortedChapters = [...chapters].sort((a, b) => a.chapterIndex - b.chapterIndex);
+    const audioFiles = project.audioFiles || [];
+
+    const chapterAudioMap = new Map<string, number>();
+    for (const af of audioFiles) {
+      if (af.scopeType === "chapter" && af.durationSeconds != null) {
+        chapterAudioMap.set(af.scopeId, af.durationSeconds);
+      }
+    }
+
+    const sectionAudioMap = new Map<string, number>();
+    for (const af of audioFiles) {
+      if (af.scopeType === "section" && af.durationSeconds != null) {
+        sectionAudioMap.set(af.scopeId, af.durationSeconds);
+      }
+    }
+
+    const formatCueTime = (totalSeconds: number): string => {
+      const totalFrames = Math.floor(totalSeconds * 75);
+      const frames = totalFrames % 75;
+      const totalSecs = Math.floor(totalFrames / 75);
+      const minutes = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
+      return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}:${String(frames).padStart(2, "0")}`;
+    };
+
+    const safeTitle = (project.title || "audiobook").replace(/[^\w\s-]/g, "").trim();
+    const mp3Filename = `${safeTitle}.mp3`;
+
+    let cue = `FILE "${mp3Filename}" MP3\n`;
+    let cumulativeSeconds = 0;
+
+    for (let i = 0; i < sortedChapters.length; i++) {
+      const ch = sortedChapters[i];
+      const trackNum = i + 1;
+      const title = ch.title || `Chapter ${trackNum}`;
+
+      cue += `TRACK ${String(trackNum).padStart(2, "0")} AUDIO\n`;
+      cue += `  TITLE "${title.replace(/"/g, '\\"')}"\n`;
+      cue += `  INDEX 01 ${formatCueTime(cumulativeSeconds)}\n`;
+
+      let chapterDuration = chapterAudioMap.get(ch.id);
+      if (chapterDuration == null) {
+        chapterDuration = 0;
+        for (const sec of ch.sections || []) {
+          const secDur = sectionAudioMap.get(sec.id);
+          if (secDur != null) {
+            chapterDuration += secDur;
+          }
+        }
+      }
+      cumulativeSeconds += chapterDuration;
+    }
+
+    const blob = new Blob([cue], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeTitle}.cue`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Cue sheet downloaded" });
+  };
+
   const chapters = project.chapters || [];
   const totalChunks = chapters.reduce(
     (sum, ch) => sum + (ch.sections || []).reduce((s, sec) => s + (sec.chunks?.length || 0), 0),
@@ -939,7 +1004,7 @@ function ProjectSettingsPanel({
 
       <Separator />
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
@@ -962,6 +1027,18 @@ function ProjectSettingsPanel({
           )}
           {isExporting ? "Exporting..." : "Export"}
         </Button>
+
+        {outputFormat === "mp3" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadCueSheet}
+            data-testid="button-download-cue"
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            Download Cue Sheet
+          </Button>
+        )}
       </div>
     </div>
   );
