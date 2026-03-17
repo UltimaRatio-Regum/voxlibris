@@ -4,6 +4,7 @@ EPUB Parser - Extracts chapters, text, and metadata from EPUB files.
 import re
 from typing import List, Tuple, Dict, Any, Optional
 from bs4 import BeautifulSoup
+import ebooklib
 from ebooklib import epub
 
 import logging
@@ -87,12 +88,12 @@ def _extract_epub_metadata(book) -> Dict[str, Any]:
 
         if not metadata["cover_image"]:
             for item in book.get_items():
-                if item.get_type() == 6:  # ITEM_COVER
+                if item.get_type() == ebooklib.ITEM_COVER:
                     metadata["cover_image"] = item.get_content()
                     break
 
         if not metadata["cover_image"]:
-            for item in book.get_items_of_type(3):  # ITEM_IMAGE
+            for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
                 name_lower = item.get_name().lower()
                 if 'cover' in name_lower:
                     metadata["cover_image"] = item.get_content()
