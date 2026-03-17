@@ -2222,40 +2222,105 @@ async def list_projects(request: FastAPIRequest):
         db.close()
 
 
+def _title_exists(db, user_id: Optional[str], candidate: str) -> bool:
+    """Check if a project with this title already exists for the user."""
+    query = db.query(Project).filter(Project.title == candidate)
+    if user_id:
+        query = query.filter(Project.user_id == user_id)
+    return query.first() is not None
+
+
+def _generate_unique_title(db, user_id: Optional[str], base_title: str) -> str:
+    """Return base_title if unique, otherwise append ' #2', ' #3', etc."""
+    if not _title_exists(db, user_id, base_title):
+        return base_title
+    n = 2
+    while True:
+        candidate = f"{base_title} #{n}"
+        if not _title_exists(db, user_id, candidate):
+            return candidate
+        n += 1
+
+
+def _generate_untitled_name(db, user_id: Optional[str]) -> str:
+    """Return 'Untitled Book #X' where X is the smallest unused integer >= 1."""
+    n = 1
+    while True:
+        candidate = f"Untitled Book #{n}"
+        if not _title_exists(db, user_id, candidate):
+            return candidate
+        n += 1
+
+
 @app.post("/projects")
 async def create_project(
     request: FastAPIRequest,
-    title: str = Form(...),
+    title: str = Form(""),
     text: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
 ):
     user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        project = Project(
-            id=str(uuid.uuid4()),
-            title=title,
-            status="draft",
-            user_id=user_id,
-        )
+        epub_metadata = None
+        chapters_data = None
+        source_type = "text"
+        source_filename = None
 
         if file and file.filename:
             file_content = await file.read()
             ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
 
             if ext == "epub":
-                from epub_parser import parse_epub
-                chapters_data = parse_epub(file_content)
-                project.source_type = "epub"
-                project.source_filename = file.filename
+                from epub_parser import parse_epub_with_metadata
+                result = parse_epub_with_metadata(file_content)
+                chapters_data = result["chapters"]
+                epub_metadata = result["metadata"]
+                source_type = "epub"
+                source_filename = file.filename
             elif ext == "txt":
                 from epub_parser import parse_txt
                 chapters_data = parse_txt(file_content)
-                project.source_type = "text"
-                project.source_filename = file.filename
+                source_type = "text"
+                source_filename = file.filename
             else:
                 raise HTTPException(status_code=400, detail="Unsupported file type. Use .txt or .epub")
+        elif not text:
+            raise HTTPException(status_code=400, detail="Either text or file is required")
 
+        user_title = title.strip()
+
+        if user_title:
+            if _title_exists(db, user_id, user_title):
+                raise HTTPException(status_code=409, detail="A project with this title already exists")
+            final_title = user_title
+        elif source_type == "epub" and epub_metadata and epub_metadata.get("title"):
+            final_title = _generate_unique_title(db, user_id, epub_metadata["title"])
+        elif source_type == "text" and not file:
+            final_title = _generate_untitled_name(db, user_id)
+        else:
+            final_title = _generate_untitled_name(db, user_id)
+
+        project = Project(
+            id=str(uuid.uuid4()),
+            title=final_title,
+            status="draft",
+            user_id=user_id,
+            source_type=source_type,
+            source_filename=source_filename,
+        )
+
+        if epub_metadata:
+            if epub_metadata.get("author"):
+                project.meta_author = epub_metadata["author"]
+            if epub_metadata.get("year"):
+                project.meta_year = epub_metadata["year"]
+            if epub_metadata.get("description"):
+                project.meta_description = epub_metadata["description"]
+            if epub_metadata.get("cover_image"):
+                project.meta_cover_image = epub_metadata["cover_image"]
+
+        if chapters_data is not None:
             db.add(project)
             db.flush()
 
@@ -2269,9 +2334,7 @@ async def create_project(
                     status="pending",
                 )
                 db.add(chapter)
-
         elif text:
-            project.source_type = "text"
             db.add(project)
             db.flush()
 
@@ -2279,7 +2342,7 @@ async def create_project(
                 id=str(uuid.uuid4()),
                 project_id=project.id,
                 chapter_index=0,
-                title=title,
+                title=final_title,
                 raw_text=text,
                 status="pending",
             )
