@@ -1,6 +1,5 @@
 import io
 import logging
-import math
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -101,10 +100,9 @@ def _run_export(job_id: str):
             chapter_chunk_ids.append((ch.title or f"Chapter {ch.chapter_index + 1}", chunk_ids))
             total_chunk_count += len(chunk_ids)
 
-        _set_progress(job, db, total_chunk_count, 0.0, f"Gathering chunks from DB (0 of {total_chunk_count})...")
+        _set_progress(job, db, total_chunk_count, 0.0, "Preparing export...")
 
         chapter_audio = []
-        gathered_count = 0
         for ch_title, chunk_ids in chapter_chunk_ids:
             blobs = []
             for cid in chunk_ids:
@@ -115,11 +113,6 @@ def _run_export(job_id: str):
                 ).order_by(ProjectAudioFile.created_at.desc()).first()
                 if af and af.audio_data:
                     blobs.append(af.audio_data)
-
-                gathered_count += 1
-                pct = (gathered_count / max(total_chunk_count, 1)) * 0.15
-                _set_progress(job, db, total_chunk_count, pct, f"Gathering chunks from DB ({gathered_count} of {total_chunk_count})...")
-
             chapter_audio.append((ch_title, blobs))
 
         total_blobs = sum(len(blobs) for _, blobs in chapter_audio)
@@ -130,17 +123,11 @@ def _run_export(job_id: str):
             db.commit()
             return
 
-        total_merge_levels = max(1, math.ceil(math.log2(max(total_blobs, 1))))
-
-        _set_progress(job, db, total_chunk_count, 0.15, f"Decoding chunks for processing (0 of {total_blobs})...")
-
         def _export_progress(phase: str, current: int, total: int, message: str):
             if phase == "decode":
-                pct = 0.15 + (current / max(total, 1)) * 0.45
-            elif phase == "merge":
-                pct = 0.60 + (current / max(total, 1)) * 0.15
+                pct = current / max(total, 1)
             elif phase == "encode":
-                pct = 0.75 + (current / max(total, 1)) * 0.25
+                pct = 1.0  # ffmpeg finalizing — effectively complete
             else:
                 pct = 0.0
             _set_progress(job, db, total_chunk_count, min(pct, 1.0), message)

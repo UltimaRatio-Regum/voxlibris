@@ -9,9 +9,10 @@ Progress callback contract:
 import io
 import math
 import os
-import struct
+import shutil
 import subprocess
 import tempfile
+import threading
 import zipfile
 import logging
 from typing import List, Optional, Tuple, Callable
@@ -293,6 +294,35 @@ def _parse_ffmpeg_progress(line: str) -> Optional[float]:
     return None
 
 
+# PCM format used when streaming to ffmpeg for M4B encoding.
+# 44100 Hz mono s16le is universally supported and fine for audiobooks.
+_M4B_SR = 44100
+_M4B_CH = 1
+_M4B_SW = 2  # bytes per sample (s16le)
+
+
+def _blob_duration_ms(blob: bytes) -> int:
+    """Return blob duration in milliseconds.
+    Uses mutagen for a fast header-only read on MP3; falls back to a full pydub decode."""
+    try:
+        return int(MP3(io.BytesIO(blob)).info.length * 1000)
+    except Exception:
+        return len(AudioSegment.from_file(io.BytesIO(blob)))
+
+
+def _decode_blob_to_pcm(blob: bytes) -> bytes:
+    """Decode any audio blob to raw s16le PCM at the M4B target format."""
+    seg = AudioSegment.from_file(io.BytesIO(blob))
+    seg = seg.set_frame_rate(_M4B_SR).set_channels(_M4B_CH).set_sample_width(_M4B_SW)
+    return seg.raw_data
+
+
+def _silence_pcm_ms(duration_ms: int) -> bytes:
+    """Return raw s16le silence of the requested duration."""
+    num_samples = int(_M4B_SR * duration_ms / 1000)
+    return bytes(num_samples * _M4B_CH * _M4B_SW)
+
+
 def export_m4b(
     chapter_audio: List[Tuple[str, List[bytes]]],
     title: str,
@@ -306,56 +336,40 @@ def export_m4b(
     progress_callback: Optional[ProgressCallback] = None,
 ) -> bytes:
     tmp_dir = tempfile.mkdtemp(prefix="m4b_export_")
-    total_blobs = sum(len(blobs) for _, blobs in chapter_audio if blobs)
     try:
-        chapter_files = []
-        chapter_meta = []
-        cumulative_ms = 0
-        total_ch = max(1, sum(1 for _, blobs in chapter_audio if blobs))
-        built_count = 0
-        blob_offset = 0
-
-        for i, (ch_title, blobs) in enumerate(chapter_audio):
-            if not blobs:
-                continue
-
-            combined = _build_mp3_segment_with_progress(
-                blobs, pause_ms, progress_callback,
-                total_blob_label=total_blobs,
-                blob_offset=blob_offset,
-            )
-            wav_path = os.path.join(tmp_dir, f"ch_{i:03d}.wav")
-            combined.export(wav_path, format="wav")
-
-            duration_ms = len(combined)
-            chapter_meta.append({
-                "title": ch_title or f"Chapter {i + 1}",
-                "start_ms": cumulative_ms,
-                "end_ms": cumulative_ms + duration_ms,
-            })
-            cumulative_ms += duration_ms
-            chapter_files.append(wav_path)
-            built_count += 1
-            blob_offset += len(blobs)
-
-        if not chapter_files:
+        valid_chapters = [(t, b) for t, b in chapter_audio if b]
+        if not valid_chapters:
             raise ValueError("No audio data to export")
 
+        total_blobs = sum(len(blobs) for _, blobs in valid_chapters)
+
+        # ------------------------------------------------------------------ #
+        # Pass 1 – cheap duration scan (mutagen header reads, no full decode) #
+        # Build chapter timestamps for ffmetadata before opening ffmpeg.       #
+        # ------------------------------------------------------------------ #
         if progress_callback:
-            progress_callback("encode", 0, 100, "Concatenating chapters...")
+            progress_callback("decode", 0, total_blobs, "Calculating chapter timings...")
 
-        concat_wav = os.path.join(tmp_dir, "full.wav")
-        if len(chapter_files) == 1:
-            os.rename(chapter_files[0], concat_wav)
-        else:
-            wav_segments = []
-            for wf in chapter_files:
-                wav_segments.append(AudioSegment.from_wav(wf))
-            full = _pairwise_merge(wav_segments)
-            full.export(concat_wav, format="wav")
+        chapter_meta = []
+        cumulative_ms = 0
+        for ch_idx, (ch_title, blobs) in enumerate(valid_chapters):
+            chapter_start = cumulative_ms
+            for i, blob in enumerate(blobs):
+                cumulative_ms += _blob_duration_ms(blob)
+                is_very_last = (ch_idx == len(valid_chapters) - 1) and (i == len(blobs) - 1)
+                if not is_very_last:
+                    cumulative_ms += pause_ms
+            chapter_meta.append({
+                "title": ch_title or f"Chapter {ch_idx + 1}",
+                "start_ms": chapter_start,
+                "end_ms": cumulative_ms,
+            })
 
-        m4b_path = os.path.join(tmp_dir, "output.m4b")
+        total_duration_s = cumulative_ms / 1000.0
 
+        # ------------------------------------------------------------------ #
+        # Write ffmetadata                                                      #
+        # ------------------------------------------------------------------ #
         def _esc_ffmeta(val: str) -> str:
             return val.replace("\\", "\\\\").replace("=", "\\=").replace(";", "\\;").replace("#", "\\#").replace("\n", "\\\n")
 
@@ -375,7 +389,6 @@ def export_m4b(
             if description:
                 f.write(f"comment={_esc_ffmeta(_safe_str(description))}\n")
             f.write("\n")
-
             for ch in chapter_meta:
                 f.write("[CHAPTER]\n")
                 f.write("TIMEBASE=1/1000\n")
@@ -384,11 +397,14 @@ def export_m4b(
                 f.write(f"title={_esc_ffmeta(_safe_str(ch['title']))}\n")
                 f.write("\n")
 
-        total_duration_s = cumulative_ms / 1000.0
-
+        # ------------------------------------------------------------------ #
+        # Launch ffmpeg – reads raw s16le PCM from stdin                       #
+        # ------------------------------------------------------------------ #
+        m4b_path = os.path.join(tmp_dir, "output.m4b")
         cmd = [
             "ffmpeg", "-y",
-            "-i", concat_wav,
+            "-f", "s16le", "-ar", str(_M4B_SR), "-ac", str(_M4B_CH),
+            "-i", "pipe:0",
             "-i", ffmetadata_path,
             "-map_metadata", "1",
             "-map_chapters", "1",
@@ -398,10 +414,19 @@ def export_m4b(
             "-f", "mp4",
             m4b_path,
         ]
-        proc = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL)
-        stderr_lines = []
-        last_pct = 0
-        try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+        )
+
+        # Read ffmpeg's progress output on a background thread to avoid the
+        # stdin-write / stderr-read deadlock that occurs in the main thread.
+        stderr_lines: List[str] = []
+        last_encode_pct = [0]
+
+        def _read_stderr():
             for raw_line in proc.stderr:
                 line = raw_line.decode("utf-8", errors="replace")
                 stderr_lines.append(line)
@@ -409,28 +434,66 @@ def export_m4b(
                     t = _parse_ffmpeg_progress(line)
                     if t is not None:
                         pct = min(int(t / total_duration_s * 100), 100)
-                        if pct > last_pct:
-                            last_pct = pct
+                        if pct > last_encode_pct[0]:
+                            last_encode_pct[0] = pct
                             progress_callback("encode", pct, 100, "Encoding audio...")
-            proc.wait(timeout=300)
+
+        stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+        stderr_thread.start()
+
+        # ------------------------------------------------------------------ #
+        # Pass 2 – stream PCM chunks directly into ffmpeg's stdin             #
+        # Each chunk is decoded on-the-fly; only one blob lives in memory at  #
+        # a time.  Silence is synthesised as zero bytes between chunks.       #
+        # ------------------------------------------------------------------ #
+        silence_pcm = _silence_pcm_ms(pause_ms)
+        blob_count = 0
+        try:
+            for ch_idx, (_ch_title, blobs) in enumerate(valid_chapters):
+                for i, blob in enumerate(blobs):
+                    pcm = _decode_blob_to_pcm(blob)
+                    proc.stdin.write(pcm)
+                    blob_count += 1
+
+                    is_very_last = (ch_idx == len(valid_chapters) - 1) and (i == len(blobs) - 1)
+                    if not is_very_last:
+                        proc.stdin.write(silence_pcm)
+
+                    if progress_callback:
+                        progress_callback(
+                            "decode", blob_count, total_blobs,
+                            f"Streaming chunk {blob_count} of {total_blobs}...",
+                        )
+        except BrokenPipeError:
+            # ffmpeg died early – fall through to the returncode check below.
+            logger.warning("ffmpeg stdin pipe broke during PCM stream; checking exit code")
+        finally:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+
+        # Wait for ffmpeg to finish encoding the buffered data and close the file.
+        stderr_thread.join(timeout=320)
+        try:
+            proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
-            raise RuntimeError("ffmpeg encoding timed out")
+            raise RuntimeError("ffmpeg timed out after PCM stream completed")
 
         if proc.returncode != 0:
             stderr_text = "".join(stderr_lines)
             logger.error(f"ffmpeg failed: {stderr_text}")
             raise RuntimeError(f"ffmpeg encoding failed: {stderr_text[-500:]}")
 
+        # ------------------------------------------------------------------ #
+        # Embed cover art and extra tags via mutagen (post-encode)             #
+        # ------------------------------------------------------------------ #
         if cover_image:
             try:
                 audio = MP4(m4b_path)
-                mime = "image/jpeg"
-                img_format = MP4Cover.FORMAT_JPEG
-                if cover_image[:4] == b'\x89PNG':
-                    mime = "image/png"
-                    img_format = MP4Cover.FORMAT_PNG
+                img_format = MP4Cover.FORMAT_PNG if cover_image[:4] == b'\x89PNG' else MP4Cover.FORMAT_JPEG
                 audio["covr"] = [MP4Cover(cover_image, imageformat=img_format)]
                 if title:
                     audio["\xa9nam"] = [_safe_str(title)]
@@ -452,5 +515,4 @@ def export_m4b(
             return f.read()
 
     finally:
-        import shutil
         shutil.rmtree(tmp_dir, ignore_errors=True)
