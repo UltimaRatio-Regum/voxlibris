@@ -79,7 +79,7 @@ Upload an ebook, and VoxLibris will:
 - Python 3.11+
 - PostgreSQL
 - A TTS engine (see [Supported TTS Engines](#supported-tts-engines))
-- An OpenRouter API key (for LLM-based text analysis)
+- An [OpenRouter](https://openrouter.ai) API key — or any other OpenAI-compatible endpoint — for LLM-based text segmentation and speaker detection
 
 ### Docker Compose (Recommended)
 
@@ -162,9 +162,66 @@ VoxLibris uses a plugin architecture — any service implementing the [TTS Engin
 
 ### Running Engines on HuggingFace Spaces
 
-The easiest way to run GPU-accelerated engines is on [HuggingFace Spaces](https://huggingface.co/spaces). Wrap your TTS model in a small FastAPI server that implements `POST /GetEngineDetails` and `POST /ConvertTextToSpeech`, deploy it as a Space with GPU, and point VoxLibris at the Space URL.
+The recommended way to run GPU-accelerated engines is as a [HuggingFace Space](https://huggingface.co/spaces) with a Docker runtime. Each engine in the `engines/` folder of this repository contains everything needed: a `Dockerfile`, `app.py`, `requirements.txt`, and a placeholder `index.html`.
 
-VoxLibris handles cold-start warm-up automatically — it polls the engine and shows a progress indicator until the Space is ready.
+#### Recommended hardware
+
+**A10G · Small** is the best balance of cost and performance for audiobook generation. It handles all supported engines at real-time or faster, and costs roughly $1/hr when active. The L40S is ~80% faster but costs proportionally more — worth it only if you are generating multiple books in parallel.
+
+#### Step-by-step: deploying an engine
+
+1. **Create a new Space** on [huggingface.co/new-space](https://huggingface.co/new-space)
+   - Set **Space SDK** to **Docker**
+   - Leave everything else at defaults and click **Create Space**
+
+2. **Clone the Space repository** locally:
+   ```bash
+   git clone https://huggingface.co/spaces/<your-username>/<your-space-name>
+   cd <your-space-name>
+   ```
+
+3. **Copy the engine files** from the `engines/<engine-name>/` folder in this repository into the cloned Space directory:
+   ```bash
+   # example for Chatterbox
+   cp -r /path/to/VoxLibris/engines/chatterbox/* .
+   ```
+
+4. **Commit and push** to HuggingFace:
+   ```bash
+   git add .
+   git commit -m "Add TTS engine"
+   git push
+   ```
+   HuggingFace will build the Docker image and start the Space automatically. The first build takes a few minutes; subsequent restarts are faster because the image is cached.
+
+5. **Set the hardware** in the Space settings to **A10G · Small** (or larger).
+
+#### Securing the engine with an API key
+
+By default a running Space is publicly reachable. Anyone with the URL could use your GPU quota. To prevent this, set a secret `API_KEY` environment variable in the Space:
+
+1. In your Space, go to **Settings → Variables and Secrets → New Secret**
+2. Name it `API_KEY` and set the value to a randomly generated string — a UUID works well:
+   ```bash
+   python3 -c "import uuid; print(uuid.uuid4())"
+   ```
+3. Save the secret. The engine will now reject any request that does not include this key.
+
+When adding the engine to VoxLibris (**Settings → TTS Engine Management**), paste the same key into the **API Token** field. VoxLibris forwards it as a Bearer token on every request.
+
+#### Available engines
+
+| Engine folder | Model | Voice cloning |
+|---|---|:---:|
+| `engines/chatterbox` | Chatterbox (Resemble AI) | ✅ |
+| `engines/xttsv2` | XTTSv2 (Coqui) | ✅ |
+| `engines/styletts2` | StyleTTS2 | ✅ |
+| `engines/qwen25-tts` | Qwen 2.5 TTS | ✅ |
+| `engines/qwen3-tts` | Qwen 3 TTS | ✅ |
+| `engines/openvoice-v2` | OpenVoice V2 | ✅ |
+| `engines/indextts2` | IndexTTS2 | ✅ |
+
+VoxLibris handles cold-start warm-up automatically — it polls the engine after registration and shows a progress indicator until the Space is ready.
 
 ## How It Works
 
@@ -211,13 +268,31 @@ This means you can set a default voice for the whole book, override it for a spe
 
 ## Configuration
 
+### Text Segmentation (OpenRouter)
+
+VoxLibris uses an LLM to segment, attribute, and label each chunk of text before audio generation. This requires an OpenAI-compatible API endpoint. **[OpenRouter](https://openrouter.ai)** is strongly recommended — it gives access to dozens of models (GPT-4o, Claude, Gemini, Llama, etc.) through a single API key, with pay-as-you-go pricing.
+
+Set these two environment variables (or add them to `.env`):
+
+```env
+AI_INTEGRATIONS_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+AI_INTEGRATIONS_OPENROUTER_API_KEY=sk-or-...
+```
+
+You can also use any other OpenAI-compatible endpoint (a local Ollama instance, vLLM, LM Studio, etc.) by changing the base URL. The model is selected per-project in the Project Wizard and can be changed at any time in the project settings.
+
 ### Environment Variables
 
 | Variable | Required | Description |
 |----------|:---:|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `OPENROUTER_API_KEY` | ✅ | API key for LLM text analysis |
-| `SECRET_KEY` | Recommended | Session encryption key (generated if not set) |
+| `DATABASE_URL` | ✅ | PostgreSQL connection string (`postgresql://user:pass@host:5432/db`) |
+| `SESSION_SECRET` | ✅ | Random string used to sign session cookies — generate with `openssl rand -hex 32` |
+| `AI_INTEGRATIONS_OPENROUTER_BASE_URL` | Recommended | Base URL for the OpenAI-compatible LLM endpoint (default: OpenRouter) |
+| `AI_INTEGRATIONS_OPENROUTER_API_KEY` | Recommended | API key for the LLM endpoint — required for text segmentation |
+| `PORT` | No | Port the Node server listens on (default: `5000`) |
+| `PYTHON_BACKEND_URL` | No | Override the Python backend URL (default: `http://127.0.0.1:8000`) |
+| `CORS_ALLOWED_ORIGINS` | No | Comma-separated allowed origins for the Python backend (default: `http://localhost:5000`) |
+| `OPENAI_API_KEY` | No | Required only if using OpenAI TTS voices directly |
 
 ### In-App Settings
 
