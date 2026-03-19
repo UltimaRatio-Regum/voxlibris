@@ -397,7 +397,7 @@ export type User = z.infer<typeof userSchema>;
 
 export const insertUserSchema = z.object({
   username: z.string().min(1),
-  password: z.string().min(4),
+  password: z.string().min(8),
   email: z.string().email().optional(),
   displayName: z.string().optional(),
   userType: z.enum(["user", "administrator"]).default("user"),
@@ -412,7 +412,7 @@ export type LoginRequest = z.infer<typeof loginSchema>;
 
 export const registerSchema = z.object({
   username: z.string().min(1),
-  password: z.string().min(4),
+  password: z.string().min(8),
   email: z.string().email(),
   ageConfirmed: z.literal(true),
   invitationCode: z.string().optional(),
@@ -421,7 +421,7 @@ export type RegisterRequest = z.infer<typeof registerSchema>;
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(4),
+  newPassword: z.string().min(8),
 });
 export type ChangePasswordRequest = z.infer<typeof changePasswordSchema>;
 

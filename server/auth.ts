@@ -2,6 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
+import { rateLimit } from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import pg from "pg";
@@ -96,6 +97,14 @@ export function ensureAdmin(
   next();
 }
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
 export async function setupAuth(app: Express) {
   const pgPool = getPool();
 
@@ -105,13 +114,15 @@ export async function setupAuth(app: Express) {
         pool: pgPool,
         createTableIfMissing: true,
       }),
-      secret: process.env.SESSION_SECRET || "voxlibris-secret-key-change-in-production",
+      secret: process.env.SESSION_SECRET || (process.env.NODE_ENV === "production"
+        ? (() => { throw new Error("SESSION_SECRET environment variable must be set in production"); })()
+        : "dev-only-secret-not-for-production"),
       resave: false,
       saveUninitialized: false,
       cookie: {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
-        secure: false,
+        secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
       },
     })
@@ -161,7 +172,7 @@ export async function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/auth/login", (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/auth/login", authLimiter, (req: Request, res: Response, next: NextFunction) => {
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
@@ -194,7 +205,7 @@ export async function setupAuth(app: Express) {
     res.json({ user: toPublicUser(req.user as DbUser) });
   });
 
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/auth/register", authLimiter, async (req: Request, res: Response) => {
     try {
       const parsed = registerSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -342,7 +353,7 @@ export async function setupAuth(app: Express) {
 
   app.patch("/api/admin/users/:id", ensureAdmin, async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { isEnabled, userType, displayName, email } = req.body;
       const updates: string[] = [];
       const values: any[] = [];
@@ -352,7 +363,10 @@ export async function setupAuth(app: Express) {
         updates.push(`is_enabled = $${idx++}`);
         values.push(isEnabled);
       }
-      if (userType) {
+      if (userType !== undefined) {
+        if (typeof userType !== "string" || !["user", "administrator"].includes(userType)) {
+          return res.status(400).json({ error: "Invalid userType" });
+        }
         updates.push(`user_type = $${idx++}`);
         values.push(userType);
       }
@@ -388,7 +402,7 @@ export async function setupAuth(app: Express) {
 
   app.delete("/api/admin/users/:id", ensureAdmin, async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const currentUser = req.user as DbUser;
       if (currentUser.id === id) {
         return res.status(400).json({ error: "Cannot delete your own account" });
@@ -402,10 +416,10 @@ export async function setupAuth(app: Express) {
 
   app.post("/api/admin/users/:id/reset-password", ensureAdmin, async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { newPassword } = req.body;
-      if (!newPassword || newPassword.length < 4) {
-        return res.status(400).json({ error: "Password must be at least 4 characters" });
+      if (!newPassword || newPassword.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
       }
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       await pgPool.query(

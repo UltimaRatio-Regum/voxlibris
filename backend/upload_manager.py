@@ -28,7 +28,8 @@ class UploadManager:
         self,
         filename: str,
         file_content: bytes,
-        tts_engine: str = "edge-tts"
+        tts_engine: str = "edge-tts",
+        user_id: str = None
     ) -> FileUpload:
         """
         Create a new file upload and extract chapters.
@@ -55,7 +56,8 @@ class UploadManager:
                 filetype=filetype,
                 tts_engine=tts_engine,
                 total_chapters=len(chapters),
-                status=UploadStatus.PENDING.value
+                status=UploadStatus.PENDING.value,
+                user_id=user_id
             )
             db.add(upload)
             db.flush()
@@ -235,6 +237,7 @@ class UploadManager:
                 "totalChapters": upload.total_chapters,
                 "analyzedChapters": analyzed_count,
                 "errorMessage": upload.error_message,
+                "userId": upload.user_id,
                 "createdAt": upload.created_at.isoformat(),
                 "chapters": [
                     {
@@ -265,13 +268,14 @@ class UploadManager:
         finally:
             db.close()
     
-    def list_uploads(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """List recent uploads."""
+    def list_uploads(self, limit: int = 20, user_id: str = None, user_role: str = "user") -> List[Dict[str, Any]]:
+        """List recent uploads, filtered by user unless the caller is an administrator."""
         db = get_db_session()
         try:
-            uploads = db.query(FileUpload).order_by(
-                FileUpload.created_at.desc()
-            ).limit(limit).all()
+            query = db.query(FileUpload).order_by(FileUpload.created_at.desc())
+            if user_role != "administrator":
+                query = query.filter(FileUpload.user_id == user_id)
+            uploads = query.limit(limit).all()
             
             result = []
             for upload in uploads:

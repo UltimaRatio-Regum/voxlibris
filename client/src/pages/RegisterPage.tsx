@@ -17,6 +17,7 @@ export function RegisterPage({ onShowLogin }: RegisterPageProps) {
   const { toast } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [email, setEmail] = useState("");
   const [invitationCode, setInvitationCode] = useState("");
   const [ageConfirmed, setAgeConfirmed] = useState(false);
@@ -32,6 +33,10 @@ export function RegisterPage({ onShowLogin }: RegisterPageProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      toast({ title: "Passwords don't match", variant: "destructive" });
+      return;
+    }
     if (!ageConfirmed) {
       toast({
         title: "Age confirmation required",
@@ -124,8 +129,19 @@ export function RegisterPage({ onShowLogin }: RegisterPageProps) {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 4 characters"
+                placeholder="At least 8 characters"
                 data-testid="input-reg-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reg-confirm-password">Confirm Password</Label>
+              <Input
+                id="reg-confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter your password"
+                data-testid="input-reg-confirm-password"
               />
             </div>
             {registrationMode === "invite-only" && (
@@ -157,7 +173,8 @@ export function RegisterPage({ onShowLogin }: RegisterPageProps) {
               disabled={
                 isSubmitting ||
                 !username ||
-                !password ||
+                password.length < 8 ||
+                password !== confirmPassword ||
                 !email ||
                 !ageConfirmed ||
                 (registrationMode === "invite-only" && !invitationCode)

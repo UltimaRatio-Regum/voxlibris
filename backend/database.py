@@ -84,7 +84,7 @@ class UploadStatus(str, Enum):
 class FileUpload(Base):
     """Represents an uploaded file (txt or epub) for processing."""
     __tablename__ = "file_uploads"
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     filename = Column(String, nullable=False)
     filetype = Column(String, nullable=False)  # "txt" or "epub"
@@ -92,9 +92,10 @@ class FileUpload(Base):
     tts_engine = Column(String, nullable=False, default="edge-tts")
     total_chapters = Column(Integer, nullable=False, default=1)
     error_message = Column(Text, nullable=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     chapters = relationship("FileChapter", back_populates="upload", cascade="all, delete-orphan")
 
 
@@ -363,6 +364,7 @@ def _migrate_columns(db_engine):
         ("tts_jobs", "user_id", "ALTER TABLE tts_jobs ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
         ("projects", "narrator_speed", "ALTER TABLE projects ADD COLUMN narrator_speed FLOAT NOT NULL DEFAULT 1.0"),
         ("project_sections", "raw_text", "ALTER TABLE project_sections ADD COLUMN raw_text TEXT"),
+        ("file_uploads", "user_id", "ALTER TABLE file_uploads ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
     ]
     
     with db_engine.connect() as conn:
@@ -390,7 +392,7 @@ def _assign_orphaned_records(session):
         admin_id = admin.id
         
         updated = 0
-        for model in [Project, CustomVoice, TTSEngineEndpoint, TTSJob]:
+        for model in [Project, CustomVoice, TTSEngineEndpoint, TTSJob, FileUpload]:
             count = session.query(model).filter(model.user_id == None).update(
                 {model.user_id: admin_id}, synchronize_session=False
             )

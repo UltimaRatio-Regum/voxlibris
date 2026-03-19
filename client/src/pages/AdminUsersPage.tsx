@@ -53,7 +53,9 @@ export function AdminUsersPage() {
   const [showResetPasswordDialog, setShowResetPasswordDialog] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState<string | null>(null);
   const [newUser, setNewUser] = useState({ username: "", password: "", email: "", displayName: "", userType: "user" });
+  const [newUserConfirmPassword, setNewUserConfirmPassword] = useState("");
   const [resetPassword, setResetPassword] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const { data: users = [], isLoading } = useQuery<User[]>({
@@ -78,6 +80,7 @@ export function AdminUsersPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       setShowCreateDialog(false);
       setNewUser({ username: "", password: "", email: "", displayName: "", userType: "user" });
+      setNewUserConfirmPassword("");
       toast({ title: "User created" });
     },
     onError: (err: Error) => {
@@ -119,6 +122,7 @@ export function AdminUsersPage() {
     onSuccess: () => {
       setShowResetPasswordDialog(null);
       setResetPassword("");
+      setResetPasswordConfirm("");
       toast({ title: "Password reset" });
     },
     onError: (err: Error) => {
@@ -231,7 +235,7 @@ export function AdminUsersPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => { setShowResetPasswordDialog(u.id); setResetPassword(""); }}
+                          onClick={() => { setShowResetPasswordDialog(u.id); setResetPassword(""); setResetPasswordConfirm(""); }}
                           data-testid={`button-reset-password-${u.id}`}
                         >
                           <Key className="h-4 w-4" />
@@ -388,7 +392,18 @@ export function AdminUsersPage() {
                 type="password"
                 value={newUser.password}
                 onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                placeholder="At least 8 characters"
                 data-testid="input-new-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Confirm Password</Label>
+              <Input
+                type="password"
+                value={newUserConfirmPassword}
+                onChange={(e) => setNewUserConfirmPassword(e.target.value)}
+                placeholder="Re-enter password"
+                data-testid="input-new-password-confirm"
               />
             </div>
             <div className="space-y-2">
@@ -407,7 +422,7 @@ export function AdminUsersPage() {
           <DialogFooter>
             <Button
               onClick={() => createUserMutation.mutate(newUser)}
-              disabled={!newUser.username || !newUser.password || createUserMutation.isPending}
+              disabled={!newUser.username || newUser.password.length < 8 || newUser.password !== newUserConfirmPassword || createUserMutation.isPending}
               data-testid="button-submit-create-user"
             >
               {createUserMutation.isPending ? "Creating..." : "Create User"}
@@ -424,15 +439,27 @@ export function AdminUsersPage() {
               Enter a new password for this user
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>New Password</Label>
-            <Input
-              type="password"
-              value={resetPassword}
-              onChange={(e) => setResetPassword(e.target.value)}
-              placeholder="At least 4 characters"
-              data-testid="input-reset-password"
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>New Password</Label>
+              <Input
+                type="password"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                data-testid="input-reset-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Confirm New Password</Label>
+              <Input
+                type="password"
+                value={resetPasswordConfirm}
+                onChange={(e) => setResetPasswordConfirm(e.target.value)}
+                placeholder="Re-enter new password"
+                data-testid="input-reset-password-confirm"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -441,7 +468,7 @@ export function AdminUsersPage() {
                   resetPasswordMutation.mutate({ id: showResetPasswordDialog, newPassword: resetPassword });
                 }
               }}
-              disabled={resetPassword.length < 4 || resetPasswordMutation.isPending}
+              disabled={resetPassword.length < 8 || resetPassword !== resetPasswordConfirm || resetPasswordMutation.isPending}
               data-testid="button-submit-reset-password"
             >
               {resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}

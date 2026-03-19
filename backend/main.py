@@ -114,9 +114,11 @@ def _find_best_split(text: str, target_pos: int) -> int:
 
 app = FastAPI(title="Narrator AI API", version="1.0.0")
 
+import os as _os
+_cors_origins = [o.strip() for o in _os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5000,http://127.0.0.1:5000").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -690,12 +692,15 @@ async def get_voice_library_db(request: FastAPIRequest):
 
 
 @app.get("/voice-library-db/{voice_id}/audio")
-async def get_voice_audio(voice_id: str):
+async def get_voice_audio(voice_id: str, request: FastAPIRequest):
     """Stream voice sample audio from the database."""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
         voice = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == voice_id).first()
         if not voice or not voice.audio_data:
+            raise HTTPException(status_code=404, detail="Voice audio not found")
+        if user_role != "administrator" and not voice.is_shared and voice.user_id != user_id:
             raise HTTPException(status_code=404, detail="Voice audio not found")
         return Response(content=voice.audio_data, media_type="audio/wav")
     finally:
@@ -703,12 +708,15 @@ async def get_voice_audio(voice_id: str):
 
 
 @app.get("/voice-library-db/{voice_id}/alt-audio")
-async def get_voice_alt_audio(voice_id: str):
+async def get_voice_alt_audio(voice_id: str, request: FastAPIRequest):
     """Stream alternate voice sample audio from the database."""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
         voice = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == voice_id).first()
         if not voice or not voice.alt_audio_data:
+            raise HTTPException(status_code=404, detail="Alternate voice audio not found")
+        if user_role != "administrator" and not voice.is_shared and voice.user_id != user_id:
             raise HTTPException(status_code=404, detail="Alternate voice audio not found")
         return Response(content=voice.alt_audio_data, media_type="audio/wav")
     finally:
@@ -1357,13 +1365,17 @@ async def get_segment_audio_endpoint(job_id: str, segment_id: str, request: Fast
 
 
 @app.post("/jobs/clear-completed")
-async def clear_completed_jobs():
-    """Delete all finished jobs (completed, failed, cancelled)."""
+async def clear_completed_jobs(request: FastAPIRequest):
+    """Delete finished jobs (completed, failed, cancelled) for the calling user."""
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        finished = db.query(TTSJob).filter(
+        query = db.query(TTSJob).filter(
             TTSJob.status.in_([JobStatus.COMPLETED.value, JobStatus.FAILED.value, JobStatus.CANCELLED.value])
-        ).all()
+        )
+        if user_role != "administrator":
+            query = query.filter(TTSJob.user_id == user_id)
+        finished = query.all()
         ids = [j.id for j in finished]
     finally:
         db.close()
@@ -1391,14 +1403,13 @@ async def cancel_job_endpoint(job_id: str, request: FastAPIRequest):
 
 
 @app.post("/jobs/{job_id}/retry")
-async def retry_job_endpoint(job_id: str):
+async def retry_job_endpoint(job_id: str, request: FastAPIRequest):
     """Retry a failed job by resetting failed segments and re-running."""
     from job_runner import start_job_async
+    user_id, user_role = _get_user_info(request)
     db = get_db_session()
     try:
-        job = db.query(TTSJob).filter(TTSJob.id == job_id).first()
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+        job = _require_job_access(db, user_id, user_role, job_id)
         if job.status not in (JobStatus.FAILED.value, JobStatus.CANCELLED.value):
             raise HTTPException(status_code=400, detail="Only failed or cancelled jobs can be retried")
 
@@ -1511,23 +1522,29 @@ class StartAnalysisRequest(BaseModel):
 
 @app.post("/uploads")
 async def upload_file(
+    request: FastAPIRequest,
     file: UploadFile = File(...),
     tts_engine: str = Form("edge-tts"),
 ):
     """Upload a .txt or .epub file for processing."""
+    user_id, _ = _get_user_info(request)
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
-    
+
     ext = file.filename.lower().split('.')[-1]
     if ext not in ('txt', 'epub'):
         raise HTTPException(status_code=400, detail="Only .txt and .epub files are supported")
-    
+
+    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
     try:
-        content = await file.read()
+        content = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 50 MB")
         upload = upload_manager.create_upload(
             filename=file.filename,
             file_content=content,
-            tts_engine=tts_engine
+            tts_engine=tts_engine,
+            user_id=user_id
         )
         
         return {
@@ -1543,10 +1560,13 @@ async def upload_file(
 
 
 @app.post("/uploads/{upload_id}/analyze")
-async def start_analysis(upload_id: str):
+async def start_analysis(upload_id: str, request: FastAPIRequest):
     """Start background analysis for an upload."""
+    user_id, user_role = _get_user_info(request)
     upload = upload_manager.get_upload(upload_id)
     if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    if user_role != "administrator" and upload.get("userId") != user_id:
         raise HTTPException(status_code=404, detail="Upload not found")
     
     upload_manager.start_analysis(
@@ -1557,24 +1577,38 @@ async def start_analysis(upload_id: str):
 
 
 @app.get("/uploads")
-async def list_uploads(limit: int = 20):
-    """List recent uploads."""
-    uploads = upload_manager.list_uploads(limit=limit)
+async def list_uploads(request: FastAPIRequest, limit: int = 20):
+    """List recent uploads for the calling user."""
+    user_id, user_role = _get_user_info(request)
+    uploads = upload_manager.list_uploads(limit=limit, user_id=user_id, user_role=user_role)
     return {"uploads": uploads}
 
 
+def _require_upload_access(upload: dict, user_id: str, user_role: str):
+    """Raise 404 if user does not own the upload (admins always have access)."""
+    if user_role != "administrator" and upload.get("userId") != user_id:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+
 @app.get("/uploads/{upload_id}")
-async def get_upload(upload_id: str):
+async def get_upload(upload_id: str, request: FastAPIRequest):
     """Get upload status and chapters."""
+    user_id, user_role = _get_user_info(request)
     upload = upload_manager.get_upload(upload_id)
     if not upload:
         raise HTTPException(status_code=404, detail="Upload not found")
+    _require_upload_access(upload, user_id, user_role)
     return upload
 
 
 @app.get("/uploads/{upload_id}/chapters/{chapter_id}/analysis")
-async def get_chapter_analysis(upload_id: str, chapter_id: str):
+async def get_chapter_analysis(upload_id: str, chapter_id: str, request: FastAPIRequest):
     """Get analysis results for a specific chapter."""
+    user_id, user_role = _get_user_info(request)
+    upload = upload_manager.get_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    _require_upload_access(upload, user_id, user_role)
     analysis = upload_manager.get_chapter_analysis(chapter_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -1582,8 +1616,13 @@ async def get_chapter_analysis(upload_id: str, chapter_id: str):
 
 
 @app.delete("/uploads/{upload_id}")
-async def delete_upload(upload_id: str):
+async def delete_upload(upload_id: str, request: FastAPIRequest):
     """Delete an upload and all its chapters."""
+    user_id, user_role = _get_user_info(request)
+    upload = upload_manager.get_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    _require_upload_access(upload, user_id, user_role)
     success = upload_manager.delete_upload(upload_id)
     if not success:
         raise HTTPException(status_code=404, detail="Upload not found")
@@ -1756,8 +1795,11 @@ class ProsodySettingsRequest(BaseModel):
 
 
 @app.post("/prosody-settings")
-async def update_prosody_settings(request: ProsodySettingsRequest):
-    """Update the emotion prosody settings with validation."""
+async def update_prosody_settings(request: ProsodySettingsRequest, req: FastAPIRequest):
+    """Update the emotion prosody settings with validation. Requires administrator role."""
+    _, user_role = _get_user_info(req)
+    if user_role != "administrator":
+        raise HTTPException(status_code=403, detail="Administrator access required")
     for emotion in AudioProcessor.VALID_EMOTIONS:
         if emotion in request.pitch:
             val = float(request.pitch[emotion])
@@ -1972,8 +2014,11 @@ async def get_tts_settings():
 
 
 @app.post("/tts-settings")
-async def update_tts_settings(request: TTSSettingsRequest):
-    """Update the TTS model settings."""
+async def update_tts_settings(request: TTSSettingsRequest, req: FastAPIRequest):
+    """Update the TTS model settings. Requires administrator role."""
+    _, user_role = _get_user_info(req)
+    if user_role != "administrator":
+        raise HTTPException(status_code=403, detail="Administrator access required")
     settings = {
         "chatterbox_model": request.chatterbox_model,
         "st_alpha": max(0, min(1, request.st_alpha)),

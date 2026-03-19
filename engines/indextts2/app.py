@@ -21,8 +21,7 @@ from typing import Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("indextts2-engine")
 
-BEARER_TOKEN = os.environ.get("API_KEY",
-                              "124CC717-7517-47A2-BBD6-54FCAE310297")
+BEARER_TOKEN = os.environ.get("API_KEY", "")
 SAMPLE_RATE = 22050
 BIT_DEPTH = 16
 CHANNELS = 1

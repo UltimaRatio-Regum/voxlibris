@@ -68,7 +68,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="At least 4 characters"
+              placeholder="At least 8 characters"
               data-testid="input-new-password-change"
             />
           </div>
@@ -85,7 +85,7 @@ export function ChangePasswordDialog({ open, onOpenChange }: ChangePasswordDialo
         <DialogFooter>
           <Button
             onClick={handleSubmit}
-            disabled={!currentPassword || newPassword.length < 4 || newPassword !== confirmPassword || isSubmitting}
+            disabled={!currentPassword || newPassword.length < 8 || newPassword !== confirmPassword || isSubmitting}
             data-testid="button-submit-change-password"
           >
             {isSubmitting ? "Changing..." : "Change Password"}

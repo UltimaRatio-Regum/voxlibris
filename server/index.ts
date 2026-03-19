@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -7,6 +8,9 @@ import { setupAuth } from "./auth";
 
 const app = express();
 const httpServer = createServer(app);
+
+app.use(helmet({ contentSecurityPolicy: false }));
+
 
 declare module "http" {
   interface IncomingMessage {
@@ -40,7 +44,7 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      if (capturedJsonResponse && res.statusCode >= 400) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
