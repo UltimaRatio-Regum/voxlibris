@@ -214,7 +214,8 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
           : job.exportFormat === "mp3-chapters" ? "zip"
           : job.exportFormat === "mp3" ? "mp3"
           : "wav";
-        a.download = job.jobType === "export" ? `export-${job.id}.${ext}` : `job-${job.id}.wav`;
+        const safeTitle = (job.title || "export").replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().slice(0, 100);
+        a.download = job.jobType === "export" ? `${safeTitle}.${ext}` : `job-${job.id}.wav`;
       }
       a.click();
       URL.revokeObjectURL(blobUrl);
