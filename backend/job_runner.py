@@ -524,15 +524,38 @@ def _check_and_create_chapter_audio(db, job_group_id: str, config: Dict[str, Any
 
 
 def _concatenate_mp3_blobs(mp3_blobs: List[bytes], pause_ms: int = 500) -> bytes:
-    """Concatenate multiple MP3 byte blobs into a single MP3 with pauses between them."""
-    combined = AudioSegment.empty()
-    pause = AudioSegment.silent(duration=pause_ms) if pause_ms > 0 else AudioSegment.empty()
+    """Concatenate multiple MP3 byte blobs into a single MP3 with pauses between them.
+    Uses pairwise merge for O(N log N) total bytes written instead of O(N^2)."""
+    pause = AudioSegment.silent(duration=pause_ms) if pause_ms > 0 else None
     
+    segments = []
     for i, blob in enumerate(mp3_blobs):
         seg = AudioSegment.from_mp3(io.BytesIO(blob))
-        if i > 0 and pause_ms > 0:
-            combined += pause
-        combined += seg
+        if i > 0 and pause:
+            segments.append(pause)
+        segments.append(seg)
+    
+    if not segments:
+        combined = AudioSegment.empty()
+    elif len(segments) == 1:
+        combined = segments[0]
+    else:
+        while len(segments) > 1:
+            merged = []
+            idx = 0
+            remaining = len(segments)
+            while idx < remaining:
+                if remaining - idx == 3:
+                    merged.append(segments[idx] + segments[idx + 1] + segments[idx + 2])
+                    idx += 3
+                elif remaining - idx >= 2:
+                    merged.append(segments[idx] + segments[idx + 1])
+                    idx += 2
+                else:
+                    merged.append(segments[idx])
+                    idx += 1
+            segments = merged
+        combined = segments[0]
     
     buffer = io.BytesIO()
     combined.export(buffer, format="mp3", bitrate="192k")

@@ -87,10 +87,13 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
     }
   })();
 
+  const [titleError, setTitleError] = useState<string | null>(null);
+
   const createAndSegmentMutation = useMutation({
     mutationFn: async (fileOrNull: File | null) => {
+      setTitleError(null);
       const formData = new FormData();
-      formData.append("title", title.trim() || "Untitled Audiobook");
+      formData.append("title", title.trim());
       if (inputMode === "text") {
         formData.append("text", pastedText);
       } else if (fileOrNull) {
@@ -103,6 +106,10 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
         credentials: "include",
       });
       if (!res.ok) {
+        if (res.status === 409) {
+          const errData = await res.json().catch(() => ({ detail: "Title already taken" }));
+          throw new Error(`__TITLE_CONFLICT__${errData.detail || "A project with this title already exists"}`);
+        }
         const errData = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(errData.detail || "Failed to create project");
       }
@@ -123,6 +130,7 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
     onSuccess: (project) => {
       setProjectId(project.id);
       setStep("analyzing");
+      setTitleError(null);
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({
         title: "Project created",
@@ -130,11 +138,15 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
       });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to create project",
-        description: error.message,
-        variant: "destructive",
-      });
+      if (error.message.startsWith("__TITLE_CONFLICT__")) {
+        setTitleError(error.message.replace("__TITLE_CONFLICT__", ""));
+      } else {
+        toast({
+          title: "Failed to create project",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 
@@ -203,13 +215,9 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!title.trim()) {
-        const nameWithoutExt = file.name.replace(/\.[^.]+$/, "");
-        setTitle(nameWithoutExt);
-      }
       createAndSegmentMutation.mutate(file);
     }
-  }, [createAndSegmentMutation, title]);
+  }, [createAndSegmentMutation]);
 
   const handleTextSubmit = useCallback(() => {
     if (!pastedText.trim()) return;
@@ -223,6 +231,7 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
     setTitle("");
     setPastedText("");
     setInputMode("file");
+    setTitleError(null);
   }, []);
 
   const handleViewProject = useCallback(() => {
@@ -310,9 +319,13 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
                 id="wizard-title"
                 data-testid="input-wizard-title"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="My Audiobook"
+                onChange={(e) => { setTitle(e.target.value); setTitleError(null); }}
+                placeholder="(Use Default Title)"
+                className={titleError ? "border-destructive" : ""}
               />
+              {titleError && (
+                <p className="text-xs text-destructive" data-testid="text-wizard-title-error">{titleError}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2">

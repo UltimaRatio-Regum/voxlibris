@@ -38,10 +38,12 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
   const [inputMode, setInputMode] = useState<"text" | "epub">("text");
   const [epubFile, setEpubFile] = useState<File | null>(null);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL.id);
+  const [titleError, setTitleError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      setTitleError(null);
       const formData = new FormData();
       formData.append("title", title);
       if (inputMode === "text") {
@@ -56,6 +58,10 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
         credentials: "include",
       });
       if (!res.ok) {
+        if (res.status === 409) {
+          const errData = await res.json().catch(() => ({ detail: "Title already taken" }));
+          throw new Error(`__TITLE_CONFLICT__${errData.detail || "A project with this title already exists"}`);
+        }
         const errText = await res.text();
         throw new Error(errText || res.statusText);
       }
@@ -83,17 +89,22 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
       setText("");
       setEpubFile(null);
       setSelectedModel(DEFAULT_MODEL.id);
+      setTitleError(null);
       onProjectCreated(project);
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to create project", description: error.message, variant: "destructive" });
+      if (error.message.startsWith("__TITLE_CONFLICT__")) {
+        setTitleError(error.message.replace("__TITLE_CONFLICT__", ""));
+      } else {
+        toast({ title: "Failed to create project", description: error.message, variant: "destructive" });
+      }
     },
   });
 
-  const canSubmit = title.trim().length > 0 && (inputMode === "text" ? text.trim().length > 0 : epubFile !== null);
+  const canSubmit = (inputMode === "text" ? text.trim().length > 0 : epubFile !== null);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setTitleError(null); }}>
       <DialogTrigger asChild>
         <Button data-testid="button-new-project">
           <Plus className="h-4 w-4 mr-2" />
@@ -115,9 +126,13 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
               id="project-title"
               data-testid="input-project-title"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="My Audiobook"
+              onChange={(e) => { setTitle(e.target.value); setTitleError(null); }}
+              placeholder="(Use Default Title)"
+              className={titleError ? "border-destructive" : ""}
             />
+            {titleError && (
+              <p className="text-xs text-destructive" data-testid="text-title-error">{titleError}</p>
+            )}
           </div>
 
           <div className="flex gap-2">

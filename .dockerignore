@@ -13,7 +13,8 @@ engines/
 .replit
 replit.md
 replit_agent/
-attached_assets/
 *.log
 .uv/
 uv.lock
+.pythonlibs/
+.canvas/

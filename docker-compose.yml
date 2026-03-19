@@ -31,6 +31,11 @@ services:
       AI_INTEGRATIONS_OPENROUTER_API_KEY: ${AI_INTEGRATIONS_OPENROUTER_API_KEY:-}
       PORT: "5000"
       NODE_ENV: production
+    volumes:
+      - uploads:/app/uploads
+      - backend-uploads:/app/backend/uploads
 
 volumes:
   pgdata:
+  uploads:
+  backend-uploads:

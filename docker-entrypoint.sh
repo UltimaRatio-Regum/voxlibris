@@ -2,9 +2,14 @@
 set -e
 
 PYTHON_PID=""
+NODE_PID=""
 
 cleanup() {
     echo "Shutting down..."
+    if [ -n "$NODE_PID" ] && kill -0 "$NODE_PID" 2>/dev/null; then
+        kill "$NODE_PID" 2>/dev/null || true
+        wait "$NODE_PID" 2>/dev/null || true
+    fi
     if [ -n "$PYTHON_PID" ] && kill -0 "$PYTHON_PID" 2>/dev/null; then
         kill "$PYTHON_PID" 2>/dev/null || true
         wait "$PYTHON_PID" 2>/dev/null || true

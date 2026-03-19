@@ -10,6 +10,7 @@ COPY client/ client/
 COPY shared/ shared/
 COPY server/ server/
 COPY script/ script/
+COPY attached_assets/ attached_assets/
 
 RUN npm run build
 
@@ -27,8 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir \
-    aiohttp beautifulsoup4 ebooklib edge-tts fastapi gradio-client \
-    httpx lxml numpy psycopg2-binary pydantic pydub pyrubberband \
+    aiohttp bcrypt beautifulsoup4 ebooklib edge-tts fastapi gradio-client \
+    httpx lxml mutagen numpy psycopg2-binary pydantic pydub pyrubberband \
     python-multipart scipy soprano-tts soundfile sqlalchemy textblob \
     torch torchaudio uvicorn \
     --extra-index-url https://download.pytorch.org/whl/cpu

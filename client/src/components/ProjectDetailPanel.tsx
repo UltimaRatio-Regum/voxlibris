@@ -103,11 +103,12 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
         filtered.sort((a, b) => (sectionOrder.get(a.scopeId) ?? 0) - (sectionOrder.get(b.scopeId) ?? 0));
       }
     } else if (selection.type === "project") {
+      const exportFiles = allAudio.filter(af => af.scopeType === "export");
       const chapters = project.chapters || [];
       const chapterIds = chapters.map(c => c.id);
-      filtered = allAudio.filter(af => af.scopeType === "chapter" && chapterIds.includes(af.scopeId));
+      let chapterFiles = allAudio.filter(af => af.scopeType === "chapter" && chapterIds.includes(af.scopeId));
       const chapterOrder = new Map(chapterIds.map((id, idx) => [id, idx]));
-      if (filtered.length === 0) {
+      if (chapterFiles.length === 0) {
         const sectionIdToChapterIdx = new Map<string, number>();
         let sectionOrder = 0;
         const sectionSortKey = new Map<string, number>();
@@ -118,11 +119,12 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
             sectionSortKey.set(sec.id, sectionOrder++);
           }
         }
-        filtered = allAudio.filter(af => af.scopeType === "section" && sectionIdToChapterIdx.has(af.scopeId));
-        filtered.sort((a, b) => (sectionSortKey.get(a.scopeId) ?? 0) - (sectionSortKey.get(b.scopeId) ?? 0));
+        chapterFiles = allAudio.filter(af => af.scopeType === "section" && sectionIdToChapterIdx.has(af.scopeId));
+        chapterFiles.sort((a, b) => (sectionSortKey.get(a.scopeId) ?? 0) - (sectionSortKey.get(b.scopeId) ?? 0));
       } else {
-        filtered.sort((a, b) => (chapterOrder.get(a.scopeId) ?? 0) - (chapterOrder.get(b.scopeId) ?? 0));
+        chapterFiles.sort((a, b) => (chapterOrder.get(a.scopeId) ?? 0) - (chapterOrder.get(b.scopeId) ?? 0));
       }
+      filtered = [...exportFiles, ...chapterFiles];
     } else {
       filtered = [];
     }
@@ -230,7 +232,7 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Audio Generation</h3>
           <div className="flex items-center gap-2">
-            {hasAnyAudio && (
+            {hasAnyAudio && selection.type !== "project" && (
               <Button
                 size="sm"
                 variant="outline"
@@ -285,7 +287,7 @@ export function ProjectDetailPanel({ selection, project, onRefresh }: ProjectDet
           </div>
         )}
 
-        <ProjectAudioList audioFiles={audioFiles} projectId={project.id} />
+        <ProjectAudioList audioFiles={audioFiles} projectId={project.id} onDelete={onRefresh} />
       </div>
     </div>
   );
@@ -467,7 +469,7 @@ function ProjectSettingsPanel({
 
   const handleExport = async () => {
     setIsExporting(true);
-    toast({ title: "Preparing export...", description: "Saving settings and building your audiobook file." });
+    toast({ title: "Starting export...", description: "Saving settings and queuing export job." });
     try {
       await apiRequest("PATCH", `/api/projects/${project.id}`, {
         ttsEngine,
@@ -487,27 +489,79 @@ function ProjectSettingsPanel({
         speakersJson: JSON.stringify(speakerConfigs),
       });
 
-      const res = await fetch(`/api/projects/${project.id}/export?format=${outputFormat}`);
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ detail: "Export failed" }));
-        throw new Error(errData.detail || "Export failed");
-      }
-      const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const match = disposition.match(/filename="(.+?)"/);
-      const filename = match ? match[1] : `${project.title}.${outputFormat === "mp3-chapters" ? "zip" : outputFormat}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "Export complete" });
+      await apiRequest("POST", `/api/projects/${project.id}/export`, { format: outputFormat });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Export job started", description: "Check the Jobs tab for progress and download." });
     } catch (error: any) {
       toast({ title: "Export failed", description: error.message, variant: "destructive" });
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleDownloadCueSheet = () => {
+    const sortedChapters = [...chapters].sort((a, b) => a.chapterIndex - b.chapterIndex);
+    const audioFiles = project.audioFiles || [];
+
+    const chapterAudioMap = new Map<string, number>();
+    for (const af of audioFiles) {
+      if (af.scopeType === "chapter" && af.durationSeconds != null) {
+        chapterAudioMap.set(af.scopeId, af.durationSeconds);
+      }
+    }
+
+    const sectionAudioMap = new Map<string, number>();
+    for (const af of audioFiles) {
+      if (af.scopeType === "section" && af.durationSeconds != null) {
+        sectionAudioMap.set(af.scopeId, af.durationSeconds);
+      }
+    }
+
+    const formatCueTime = (totalSeconds: number): string => {
+      const totalFrames = Math.floor(totalSeconds * 75);
+      const frames = totalFrames % 75;
+      const totalSecs = Math.floor(totalFrames / 75);
+      const minutes = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
+      return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}:${String(frames).padStart(2, "0")}`;
+    };
+
+    const safeTitle = (project.title || "audiobook").replace(/[^\w\s-]/g, "").trim();
+    const mp3Filename = `${safeTitle}.mp3`;
+
+    let cue = `FILE "${mp3Filename}" MP3\n`;
+    let cumulativeSeconds = 0;
+
+    for (let i = 0; i < sortedChapters.length; i++) {
+      const ch = sortedChapters[i];
+      const trackNum = i + 1;
+      const title = ch.title || `Chapter ${trackNum}`;
+
+      cue += `TRACK ${String(trackNum).padStart(2, "0")} AUDIO\n`;
+      cue += `  TITLE "${title.replace(/"/g, '\\"')}"\n`;
+      cue += `  INDEX 01 ${formatCueTime(cumulativeSeconds)}\n`;
+
+      let chapterDuration = chapterAudioMap.get(ch.id);
+      if (chapterDuration == null) {
+        chapterDuration = 0;
+        for (const sec of ch.sections || []) {
+          const secDur = sectionAudioMap.get(sec.id);
+          if (secDur != null) {
+            chapterDuration += secDur;
+          }
+        }
+      }
+      cumulativeSeconds += chapterDuration;
+    }
+
+    const blob = new Blob([cue], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeTitle}.cue`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Cue sheet downloaded" });
   };
 
   const chapters = project.chapters || [];
@@ -950,7 +1004,7 @@ function ProjectSettingsPanel({
 
       <Separator />
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
@@ -973,6 +1027,18 @@ function ProjectSettingsPanel({
           )}
           {isExporting ? "Exporting..." : "Export"}
         </Button>
+
+        {outputFormat === "mp3" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadCueSheet}
+            data-testid="button-download-cue"
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            Download Cue Sheet
+          </Button>
+        )}
       </div>
     </div>
   );

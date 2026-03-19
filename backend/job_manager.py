@@ -86,23 +86,34 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
         if not job:
             return None
         
-        return {
-            "id": job.id,
-            "title": job.title,
-            "status": job.status,
-            "totalSegments": job.total_segments,
-            "completedSegments": job.completed_segments,
-            "failedSegments": job.failed_segments,
-            "ttsEngine": job.tts_engine,
-            "narratorVoiceId": job.narrator_voice_id,
-            "errorMessage": job.error_message,
-            "jobGroupId": job.job_group_id,
-            "createdAt": job.created_at.isoformat() if job.created_at else None,
-            "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
-            "progress": (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0,
-        }
+        return _serialize_job(job)
     finally:
         db.close()
+
+
+def _serialize_job(job: TTSJob) -> Dict[str, Any]:
+    """Serialize a TTSJob to a dict for API responses."""
+    job_type = getattr(job, 'job_type', 'tts') or 'tts'
+    progress = (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0
+    return {
+        "id": job.id,
+        "title": job.title,
+        "status": job.status,
+        "totalSegments": job.total_segments,
+        "completedSegments": job.completed_segments,
+        "failedSegments": job.failed_segments,
+        "ttsEngine": job.tts_engine,
+        "narratorVoiceId": job.narrator_voice_id,
+        "errorMessage": job.error_message,
+        "jobGroupId": job.job_group_id,
+        "jobType": job_type,
+        "projectId": getattr(job, 'project_id', None),
+        "exportFormat": getattr(job, 'export_format', None),
+        "outputAudioFileId": getattr(job, 'output_audio_file_id', None),
+        "createdAt": job.created_at.isoformat() if job.created_at else None,
+        "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
+        "progress": progress,
+    }
 
 
 def get_all_jobs(include_completed: bool = True, limit: int = 20, offset: int = 0, user_id: str = None, user_role: str = "user") -> Dict[str, Any]:
@@ -122,24 +133,7 @@ def get_all_jobs(include_completed: bool = True, limit: int = 20, offset: int = 
         total = query.count()
         jobs = query.offset(offset).limit(limit).all()
         
-        jobs_list = [
-            {
-                "id": job.id,
-                "title": job.title,
-                "status": job.status,
-                "totalSegments": job.total_segments,
-                "completedSegments": job.completed_segments,
-                "failedSegments": job.failed_segments,
-                "ttsEngine": job.tts_engine,
-                "narratorVoiceId": job.narrator_voice_id,
-                "errorMessage": job.error_message,
-                "jobGroupId": job.job_group_id,
-                "createdAt": job.created_at.isoformat() if job.created_at else None,
-                "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
-                "progress": (job.completed_segments / job.total_segments * 100) if job.total_segments > 0 else 0,
-            }
-            for job in jobs
-        ]
+        jobs_list = [_serialize_job(job) for job in jobs]
         return {"jobs": jobs_list, "total": total, "limit": limit, "offset": offset}
     finally:
         db.close()
@@ -265,42 +259,67 @@ def cancel_job(job_id: str) -> bool:
 
 
 def delete_job(job_id: str) -> bool:
-    """Delete a job and its segments."""
+    """Delete a job and its segments using bulk SQL to avoid loading blobs."""
     cancel_job(job_id)
     
     db = get_db_session()
     try:
         job = db.query(TTSJob).filter(TTSJob.id == job_id).first()
-        if job:
-            db.delete(job)
-            db.commit()
-            
-            job_dir = os.path.join(TTS_OUTPUT_DIR, job_id)
-            if os.path.exists(job_dir):
-                import shutil
-                shutil.rmtree(job_dir)
-            
-            return True
-        return False
+        if not job:
+            return False
+
+        export_audio_id = getattr(job, 'output_audio_file_id', None)
+
+        db.query(TTSSegment).filter(TTSSegment.job_id == job_id).delete(synchronize_session=False)
+
+        db.delete(job)
+
+        if export_audio_id:
+            from database import ProjectAudioFile
+            db.query(ProjectAudioFile).filter(ProjectAudioFile.id == export_audio_id).delete(synchronize_session=False)
+
+        db.commit()
+
+        job_dir = os.path.join(TTS_OUTPUT_DIR, job_id)
+        if os.path.exists(job_dir):
+            import shutil
+            shutil.rmtree(job_dir)
+
+        return True
     finally:
         db.close()
 
 
 async def cleanup_old_jobs(max_age_hours: int = 24):
-    """Clean up jobs older than max_age_hours."""
+    """Clean up jobs older than max_age_hours using bulk deletion."""
     db = get_db_session()
     try:
         cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
         old_jobs = db.query(TTSJob).filter(TTSJob.created_at < cutoff).all()
-        
+
+        if not old_jobs:
+            return
+
+        job_ids = [job.id for job in old_jobs]
+        export_audio_ids = [job.output_audio_file_id for job in old_jobs if getattr(job, 'output_audio_file_id', None)]
+
+        db.query(TTSSegment).filter(TTSSegment.job_id.in_(job_ids)).delete(synchronize_session=False)
+
         for job in old_jobs:
-            job_dir = os.path.join(TTS_OUTPUT_DIR, job.id)
+            db.delete(job)
+
+        if export_audio_ids:
+            from database import ProjectAudioFile
+            db.query(ProjectAudioFile).filter(ProjectAudioFile.id.in_(export_audio_ids)).delete(synchronize_session=False)
+
+        db.commit()
+
+        for jid in job_ids:
+            job_dir = os.path.join(TTS_OUTPUT_DIR, jid)
             if os.path.exists(job_dir):
                 import shutil
-                shutil.rmtree(job_dir)
-            db.delete(job)
-        
-        db.commit()
+                shutil.rmtree(job_dir, ignore_errors=True)
+
         logger.info(f"Cleaned up {len(old_jobs)} old jobs")
     finally:
         db.close()

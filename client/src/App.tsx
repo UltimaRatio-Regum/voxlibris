@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
+import DocsPage from "@/pages/DocsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 
@@ -45,7 +46,13 @@ function App() {
         <TooltipProvider>
           <AuthProvider>
             <Toaster />
-            <AuthGate />
+            <Switch>
+              <Route path="/docs" component={DocsPage} />
+              <Route path="/docs/:slug" component={DocsPage} />
+              <Route>
+                <AuthGate />
+              </Route>
+            </Switch>
           </AuthProvider>
         </TooltipProvider>
       </QueryClientProvider>
