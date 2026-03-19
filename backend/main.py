@@ -3,6 +3,9 @@ Narrator AI - FastAPI Backend
 Text to Audiobook Generator with Chatterbox TTS
 """
 
+from dotenv import load_dotenv
+load_dotenv()  # loads .env if present; never overrides vars already set in the environment
+
 import os
 import re
 import json
