@@ -5,6 +5,7 @@ import logging
 import os
 import asyncio
 import threading
+from datetime import datetime
 from typing import Optional, List
 import httpx
 
@@ -654,6 +655,7 @@ async def _run_segmentation(project_id: str, model: str):
             return
 
         project.status = "segmenting"
+        project.segmentation_started_at = datetime.utcnow()
         db.commit()
 
         chapters = db.query(ProjectChapter).filter(

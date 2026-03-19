@@ -33,10 +33,11 @@ from models import (
     GenerateRequest,
     GenerateResponse,
 )
+from sqlalchemy import func as _sqla_func
 from database import (
     get_db_session, TTSEngineEndpoint, VoiceLibraryEntry, CustomVoice,
     Project, ProjectChapter, ProjectSection, ProjectChunk, ProjectAudioFile,
-    AppSetting, TTSJob, JobStatus,
+    AppSetting, TTSJob, TTSSegment, JobStatus,
 )
 from remote_tts_client import RemoteTTSClient
 from project_segmenter import segment_project_background, split_into_sections, _call_llm_for_section, rechunk_section
@@ -2122,18 +2123,13 @@ class GenerateProjectAudioRequest(BaseModel):
     onlyMissing: Optional[bool] = False
 
 
-def _serialize_project_list(project: Project) -> dict:
-    db = get_db_session()
-    try:
-        chapter_count = db.query(ProjectChapter).filter(
-            ProjectChapter.project_id == project.id
-        ).count()
-        total_chunks = db.query(ProjectChunk).join(ProjectSection).join(ProjectChapter).filter(
-            ProjectChapter.project_id == project.id
-        ).count()
-    finally:
-        db.close()
-
+def _serialize_project_list(
+    project: Project,
+    chapter_count: int = 0,
+    total_chunks: int = 0,
+    generation_progress: Optional[dict] = None,
+    segmentation_progress: Optional[dict] = None,
+) -> dict:
     return {
         "id": project.id,
         "title": project.title,
@@ -2143,6 +2139,8 @@ def _serialize_project_list(project: Project) -> dict:
         "totalChunks": total_chunks,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
         "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
+        "generationProgress": generation_progress,
+        "segmentationProgress": segmentation_progress,
     }
 
 
@@ -2247,6 +2245,7 @@ def _serialize_project_full(project: Project, db) -> dict:
         "metaYear": project.meta_year,
         "metaDescription": project.meta_description,
         "hasCoverImage": project.meta_cover_image is not None and len(project.meta_cover_image) > 0,
+        "hasSourceFile": project.source_file_data is not None and len(project.source_file_data) > 0,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
         "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
         "chapters": chapters_data,
@@ -2261,11 +2260,260 @@ async def list_projects(request: FastAPIRequest):
     try:
         query = db.query(Project)
         if user_id and user_role != "administrator":
-            query = query.filter(
-                Project.user_id == user_id
-            )
+            query = query.filter(Project.user_id == user_id)
         projects = query.order_by(Project.updated_at.desc()).all()
-        return [_serialize_project_list(p) for p in projects]
+
+        if not projects:
+            return []
+
+        project_ids = [p.id for p in projects]
+
+        # ── Batch: segmentation progress (projects currently segmenting) ────────
+        # Total   = sum of chapter raw_text lengths (fixed from the start)
+        # Processed = bytes from fully-done chapters + bytes from completed
+        #             sections inside the chapter that is currently segmenting.
+        # This gives per-section granularity rather than per-chapter jumps.
+        segmenting_ids = [p.id for p in projects if p.status == "segmenting"]
+        seg_progress_map: dict = {}
+        if segmenting_ids:
+            # Total bytes: all chapters (status-independent)
+            chapter_byte_rows = db.query(
+                ProjectChapter.project_id,
+                ProjectChapter.id.label("chapter_id"),
+                ProjectChapter.status.label("chapter_status"),
+                _sqla_func.length(ProjectChapter.raw_text).label("bytes"),
+            ).filter(
+                ProjectChapter.project_id.in_(segmenting_ids)
+            ).all()
+
+            for row in chapter_byte_rows:
+                pid = row.project_id
+                if pid not in seg_progress_map:
+                    seg_progress_map[pid] = {"total": 0, "processed": 0}
+                seg_progress_map[pid]["total"] += row.bytes or 0
+                if row.chapter_status in ("segmented", "failed"):
+                    seg_progress_map[pid]["processed"] += row.bytes or 0
+
+            # For the chapter(s) currently being segmented, add bytes from
+            # sections that have already finished within that chapter.
+            segmenting_chapter_ids = [
+                row.chapter_id for row in chapter_byte_rows
+                if row.chapter_status == "segmenting"
+            ]
+            if segmenting_chapter_ids:
+                section_byte_rows = db.query(
+                    ProjectSection.chapter_id,
+                    _sqla_func.sum(_sqla_func.length(ProjectSection.raw_text)).label("bytes"),
+                ).filter(
+                    ProjectSection.chapter_id.in_(segmenting_chapter_ids),
+                    ProjectSection.status.in_(["segmented", "failed"]),
+                ).group_by(ProjectSection.chapter_id).all()
+
+                # Map chapter_id → project_id for the lookup
+                chap_to_proj = {
+                    row.chapter_id: row.project_id for row in chapter_byte_rows
+                    if row.chapter_status == "segmenting"
+                }
+                for row in section_byte_rows:
+                    pid = chap_to_proj.get(row.chapter_id)
+                    if pid and pid in seg_progress_map:
+                        seg_progress_map[pid]["processed"] += row.bytes or 0
+
+        # ── Batch: chapter counts ──────────────────────────────────────────────
+        chapter_rows = db.query(
+            ProjectChapter.project_id,
+            _sqla_func.count(ProjectChapter.id).label("cnt"),
+        ).filter(ProjectChapter.project_id.in_(project_ids)).group_by(ProjectChapter.project_id).all()
+        chapter_count_map = {r.project_id: r.cnt for r in chapter_rows}
+
+        # ── Batch: chunk counts ────────────────────────────────────────────────
+        chunk_rows = db.query(
+            ProjectChapter.project_id,
+            _sqla_func.count(ProjectChunk.id).label("cnt"),
+        ).join(ProjectSection, ProjectSection.chapter_id == ProjectChapter.id
+        ).join(ProjectChunk, ProjectChunk.section_id == ProjectSection.id
+        ).filter(ProjectChapter.project_id.in_(project_ids)
+        ).group_by(ProjectChapter.project_id).all()
+        chunk_count_map = {r.project_id: r.cnt for r in chunk_rows}
+
+        # ── Batch: find projects with active TTS jobs + their group IDs ─────────
+        _active = ["pending", "waiting", "processing"]
+
+        # Per (project_id, job_group_id), find the latest job creation time so
+        # we can select only the most-recently-started group per project.
+        # This prevents a stale group from inflating the total when a new
+        # generation run is started before the old one fully drains.
+        active_group_rows = db.query(
+            TTSJob.project_id,
+            TTSJob.job_group_id,
+            _sqla_func.max(TTSJob.created_at).label("latest"),
+        ).filter(
+            TTSJob.project_id.in_(project_ids),
+            TTSJob.job_type == "tts",
+            TTSJob.status.in_(_active),
+        ).group_by(TTSJob.project_id, TTSJob.job_group_id).all()
+
+        if not active_group_rows:
+            # No active generation jobs — still need segmentation progress
+            result = []
+            for p in projects:
+                seg_progress = None
+                if p.id in seg_progress_map:
+                    sp = seg_progress_map[p.id]
+                    started_at = getattr(p, "segmentation_started_at", None)
+                    seg_progress = {
+                        "totalBytes": sp["total"],
+                        "processedBytes": sp["processed"],
+                        "startedAt": started_at.isoformat() + "Z" if started_at else None,
+                    }
+                result.append(_serialize_project_list(
+                    p,
+                    chapter_count=chapter_count_map.get(p.id, 0),
+                    total_chunks=chunk_count_map.get(p.id, 0),
+                    generation_progress=None,
+                    segmentation_progress=seg_progress,
+                ))
+            return result
+
+        # For each project pick only the most-recently-started group/job.
+        # Separate into grouped (project-/chapter-scope) and ungrouped
+        # (individual chunk/section jobs with no group ID).
+        best_group_per_project: dict = {}  # project_id → (job_group_id | None, latest datetime)
+        for row in active_group_rows:
+            pid = row.project_id
+            if pid not in best_group_per_project or row.latest > best_group_per_project[pid][1]:
+                best_group_per_project[pid] = (row.job_group_id, row.latest)
+
+        active_group_ids: set = set()
+        projects_with_ungrouped: set = set()
+        projects_with_active: set = set()
+        for pid, (gid, _) in best_group_per_project.items():
+            projects_with_active.add(pid)
+            if gid is not None:
+                active_group_ids.add(gid)
+            else:
+                projects_with_ungrouped.add(pid)
+
+        # ── Grouped jobs: aggregate ALL jobs in the group (incl. completed) ────
+        # This prevents the progress bar from resetting as chapters finish.
+        grouped_stats: dict = {}
+        grouped_job_ids: list = []
+        if active_group_ids:
+            grouped_rows = db.query(
+                TTSJob.project_id,
+                _sqla_func.sum(TTSJob.total_segments).label("total"),
+                _sqla_func.sum(TTSJob.completed_segments).label("completed"),
+                _sqla_func.sum(TTSJob.failed_segments).label("failed"),
+                _sqla_func.count(TTSJob.id).label("job_count"),
+            ).filter(
+                TTSJob.job_group_id.in_(active_group_ids),
+                TTSJob.job_type == "tts",
+            ).group_by(TTSJob.project_id).all()
+            grouped_stats = {r.project_id: r for r in grouped_rows}
+
+            # Collect all job IDs in those groups for the timing query
+            grouped_job_ids = [
+                j.id for j in db.query(TTSJob.id).filter(
+                    TTSJob.job_group_id.in_(active_group_ids),
+                    TTSJob.job_type == "tts",
+                ).all()
+            ]
+
+        # ── Ungrouped jobs: only count active ones (each is self-contained) ────
+        ungrouped_stats: dict = {}
+        ungrouped_job_ids: list = []
+        if projects_with_ungrouped:
+            ungrouped_rows = db.query(
+                TTSJob.project_id,
+                _sqla_func.sum(TTSJob.total_segments).label("total"),
+                _sqla_func.sum(TTSJob.completed_segments).label("completed"),
+                _sqla_func.sum(TTSJob.failed_segments).label("failed"),
+                _sqla_func.count(TTSJob.id).label("job_count"),
+            ).filter(
+                TTSJob.project_id.in_(list(projects_with_ungrouped)),
+                TTSJob.job_type == "tts",
+                TTSJob.status.in_(_active),
+                TTSJob.job_group_id.is_(None),
+            ).group_by(TTSJob.project_id).all()
+            ungrouped_stats = {r.project_id: r for r in ungrouped_rows}
+
+            ungrouped_job_ids = [
+                j.id for j in db.query(TTSJob.id).filter(
+                    TTSJob.project_id.in_(list(projects_with_ungrouped)),
+                    TTSJob.job_type == "tts",
+                    TTSJob.status.in_(_active),
+                    TTSJob.job_group_id.is_(None),
+                ).all()
+            ]
+
+        # ── Merge grouped + ungrouped stats per project ───────────────────────
+        job_stats_map: dict = {}
+        for pid in projects_with_active:
+            total = completed = failed = job_count = 0
+            if pid in grouped_stats:
+                r = grouped_stats[pid]
+                total += int(r.total or 0)
+                completed += int(r.completed or 0)
+                failed += int(r.failed or 0)
+                job_count += int(r.job_count or 0)
+            if pid in ungrouped_stats:
+                r = ungrouped_stats[pid]
+                total += int(r.total or 0)
+                completed += int(r.completed or 0)
+                failed += int(r.failed or 0)
+                job_count += int(r.job_count or 0)
+            job_stats_map[pid] = {
+                "total": total, "completed": completed,
+                "failed": failed, "job_count": job_count,
+            }
+
+        # ── First completed segment timestamp (for rate / ETA calculation) ─────
+        all_tracked_job_ids = grouped_job_ids + ungrouped_job_ids
+        first_completed_map: dict = {}
+        if all_tracked_job_ids:
+            timing_rows = db.query(
+                TTSJob.project_id,
+                _sqla_func.min(TTSSegment.updated_at).label("first_at"),
+            ).join(TTSSegment, TTSSegment.job_id == TTSJob.id
+            ).filter(
+                TTSJob.id.in_(all_tracked_job_ids),
+                TTSSegment.status == "completed",
+            ).group_by(TTSJob.project_id).all()
+            first_completed_map = {r.project_id: r.first_at for r in timing_rows}
+
+        # ── Assemble ───────────────────────────────────────────────────────────
+        result = []
+        for p in projects:
+            gen_progress = None
+            if p.id in job_stats_map:
+                js = job_stats_map[p.id]
+                first_at = first_completed_map.get(p.id)
+                gen_progress = {
+                    "totalChunks": js["total"],
+                    "completedChunks": js["completed"],
+                    "failedChunks": js["failed"],
+                    "activeJobCount": js["job_count"],
+                    "firstCompletedAt": first_at.isoformat() + "Z" if first_at else None,
+                }
+
+            seg_progress = None
+            if p.id in seg_progress_map:
+                sp = seg_progress_map[p.id]
+                started_at = getattr(p, "segmentation_started_at", None)
+                seg_progress = {
+                    "totalBytes": sp["total"],
+                    "processedBytes": sp["processed"],
+                    "startedAt": started_at.isoformat() + "Z" if started_at else None,
+                }
+
+            result.append(_serialize_project_list(
+                p,
+                chapter_count=chapter_count_map.get(p.id, 0),
+                total_chunks=chunk_count_map.get(p.id, 0),
+                generation_progress=gen_progress,
+                segmentation_progress=seg_progress,
+            ))
+        return result
     finally:
         db.close()
 
@@ -2356,6 +2604,8 @@ async def create_project(
             user_id=user_id,
             source_type=source_type,
             source_filename=source_filename,
+            source_file_data=file_content if file and file.filename else None,
+            source_file_ext=ext if file and file.filename else None,
         )
 
         if epub_metadata:
@@ -3369,6 +3619,257 @@ async def delete_project_audio(project_id: str, audio_file_id: str, request: Fas
         db.delete(af)
         db.commit()
         return {"status": "deleted"}
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}/source-file")
+async def download_project_source_file(project_id: str, request: FastAPIRequest):
+    """Download the original source file (epub/txt) stored when the project was created."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        project = _require_project_access(db, user_id, user_role, project_id)
+        if not project.source_file_data:
+            raise HTTPException(status_code=404, detail="No source file stored for this project")
+        ext = project.source_file_ext or ("epub" if project.source_type == "epub" else "txt")
+        filename = project.source_filename or f"{project.title}.{ext}"
+        media_type = "application/epub+zip" if ext == "epub" else "text/plain"
+        return Response(
+            content=project.source_file_data,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}/backup")
+async def backup_project(
+    project_id: str,
+    request: FastAPIRequest,
+    include_audio: bool = False,
+    include_voices: bool = False,
+    include_source: bool = False,
+):
+    """
+    Create a full project backup as JSON (or ZIP if binary content is requested).
+
+    Query params:
+      include_audio   – embed all generated chunk-level audio files
+      include_voices  – embed custom voice sample files
+      include_source  – embed the original source epub/txt file
+    """
+    import base64
+    import io
+    import zipfile
+
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        project = _require_project_access(db, user_id, user_role, project_id)
+
+        safe_title = re.sub(r"[^\w\s\-]", "", project.title)[:50].strip()
+
+        # ── Cover image ────────────────────────────────────────────────────────
+        cover_b64 = None
+        if project.meta_cover_image:
+            cover_b64 = base64.b64encode(project.meta_cover_image).decode("utf-8")
+
+        # ── Speaker config (parsed from JSON) ──────────────────────────────────
+        speakers_dict: dict = {}
+        try:
+            speakers_dict = json.loads(project.speakers_json) if project.speakers_json else {}
+        except Exception:
+            pass
+
+        # ── Helper: classify a voice ID ────────────────────────────────────────
+        custom_voice_ids_needed: set = set()
+
+        def _voice_info(vid: Optional[str]) -> Optional[dict]:
+            if not vid:
+                return None
+            if vid.startswith("library:"):
+                lib_id = vid[len("library:"):]
+                lv = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == lib_id).first()
+                return {"id": vid, "type": "library", "name": lv.name if lv else vid}
+            cv = db.query(CustomVoice).filter(CustomVoice.id == vid).first()
+            if cv:
+                custom_voice_ids_needed.add(vid)
+                return {
+                    "id": vid,
+                    "type": "custom",
+                    "name": cv.name,
+                    "file": f"custom_voices/{vid}{cv.file_ext}" if include_voices else None,
+                }
+            return {"id": vid, "type": "preset", "name": vid}
+
+        narrator_voice_info = _voice_info(project.narrator_voice_id)
+        base_voice_info = _voice_info(project.base_voice_id)
+
+        speaker_voices = []
+        for speaker_name, cfg in speakers_dict.items():
+            if not isinstance(cfg, dict):
+                continue
+            vsid = cfg.get("voiceSampleId")
+            speaker_voices.append({
+                "speaker_name": speaker_name,
+                "voice_id": vsid,
+                "voice_info": _voice_info(vsid),
+                "pitch_offset": cfg.get("pitchOffset", 0),
+                "speed_factor": cfg.get("speedFactor", 1.0),
+            })
+
+        # ── Pre-load chunk audio if requested ──────────────────────────────────
+        audio_by_chunk: dict = {}
+        if include_audio:
+            audio_files = db.query(ProjectAudioFile).filter(
+                ProjectAudioFile.project_id == project.id,
+                ProjectAudioFile.scope_type == "chunk",
+            ).all()
+            for af in audio_files:
+                if af.scope_id not in audio_by_chunk:
+                    audio_by_chunk[af.scope_id] = af
+
+        # ── Build chapters / sections / chunks ────────────────────────────────
+        chapters = db.query(ProjectChapter).filter(
+            ProjectChapter.project_id == project.id
+        ).order_by(ProjectChapter.chapter_index).all()
+
+        # Maps chunk_id → (zip_path, audio_data_bytes)
+        chunk_audio_entries: list = []
+
+        chapters_json = []
+        for ch in chapters:
+            sections = db.query(ProjectSection).filter(
+                ProjectSection.chapter_id == ch.id
+            ).order_by(ProjectSection.section_index).all()
+
+            sections_json = []
+            for sec in sections:
+                chunks = db.query(ProjectChunk).filter(
+                    ProjectChunk.section_id == sec.id
+                ).order_by(ProjectChunk.chunk_index).all()
+
+                chunks_json = []
+                for chunk in chunks:
+                    chunk_data: dict = {
+                        "chunk_index": chunk.chunk_index,
+                        "text": chunk.text,
+                        "segment_type": chunk.segment_type,
+                        "speaker": chunk.speaker,
+                        "emotion": chunk.emotion,
+                        "speaker_override": chunk.speaker_override,
+                        "emotion_override": chunk.emotion_override,
+                        "word_count": chunk.word_count,
+                        "audio_file": None,
+                    }
+                    if include_audio:
+                        af = audio_by_chunk.get(chunk.id)
+                        if af and af.audio_data:
+                            zip_path = (
+                                f"audio_chunks/"
+                                f"chapter_{ch.chapter_index:04d}/"
+                                f"section_{sec.section_index:04d}/"
+                                f"chunk_{chunk.chunk_index:04d}.mp3"
+                            )
+                            chunk_data["audio_file"] = zip_path
+                            chunk_audio_entries.append((zip_path, af.audio_data))
+                    chunks_json.append(chunk_data)
+
+                sections_json.append({
+                    "section_index": sec.section_index,
+                    "title": sec.title,
+                    "raw_text": sec.raw_text,
+                    "chunks": chunks_json,
+                })
+
+            chapters_json.append({
+                "chapter_index": ch.chapter_index,
+                "title": ch.title,
+                "raw_text": ch.raw_text,
+                "tts_engine_override": ch.tts_engine,
+                "narrator_voice_id_override": ch.narrator_voice_id,
+                "speakers_override": ch.speakers_json,
+                "sections": sections_json,
+            })
+
+        # ── Assemble backup JSON ───────────────────────────────────────────────
+        backup = {
+            "version": "1.0",
+            "app": "VoxLibris",
+            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "project": {
+                "title": project.title,
+                "tts_engine": project.tts_engine,
+                "narrator_voice_id": project.narrator_voice_id,
+                "narrator_speed": project.narrator_speed if hasattr(project, "narrator_speed") and project.narrator_speed is not None else 1.0,
+                "base_voice_id": project.base_voice_id,
+                "exaggeration": project.exaggeration,
+                "pause_duration": project.pause_duration,
+                "speakers": speakers_dict,
+                "narrator_emotion": project.narrator_emotion or "auto",
+                "dialogue_emotion_mode": project.dialogue_emotion_mode or "per-chunk",
+                "source_type": project.source_type,
+                "source_filename": project.source_filename,
+                "output_format": project.output_format or "mp3",
+                "meta": {
+                    "author": project.meta_author,
+                    "narrator": project.meta_narrator,
+                    "genre": project.meta_genre,
+                    "year": project.meta_year,
+                    "description": project.meta_description,
+                    "cover_image_base64": cover_b64,
+                },
+            },
+            "chapters": chapters_json,
+            "voices": {
+                "narrator": narrator_voice_info,
+                "base_voice": base_voice_info,
+                "speakers": speaker_voices,
+            },
+        }
+
+        json_bytes = json.dumps(backup, ensure_ascii=False, indent=2).encode("utf-8")
+
+        # ── Decide: plain JSON or ZIP ──────────────────────────────────────────
+        has_audio = bool(chunk_audio_entries)
+        has_custom_voices = bool(custom_voice_ids_needed)
+        has_source = include_source and bool(project.source_file_data)
+        needs_zip = (include_audio and has_audio) or (include_voices and has_custom_voices) or has_source
+
+        if not needs_zip:
+            return Response(
+                content=json_bytes,
+                media_type="application/json",
+                headers={"Content-Disposition": f'attachment; filename="{safe_title}_backup.json"'},
+            )
+
+        # Build ZIP
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", json_bytes)
+
+            if include_audio:
+                for zip_path, audio_data in chunk_audio_entries:
+                    zf.writestr(zip_path, audio_data)
+
+            if include_voices:
+                for vid in custom_voice_ids_needed:
+                    cv = db.query(CustomVoice).filter(CustomVoice.id == vid).first()
+                    if cv and cv.audio_data:
+                        zf.writestr(f"custom_voices/{vid}{cv.file_ext}", cv.audio_data)
+
+            if has_source:
+                src_ext = project.source_file_ext or ("epub" if project.source_type == "epub" else "txt")
+                src_filename = project.source_filename or f"source.{src_ext}"
+                zf.writestr(f"source/{src_filename}", project.source_file_data)
+
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{safe_title}_backup.zip"'},
+        )
     finally:
         db.close()
 

@@ -50,6 +50,8 @@ def create_job(
             narrator_voice_id=config.get("narratorVoiceId"),
             config_json=json.dumps(config),
             job_group_id=job_group_id,
+            job_type="tts",
+            project_id=config.get("projectId"),
             user_id=user_id,
         )
         db.add(job)

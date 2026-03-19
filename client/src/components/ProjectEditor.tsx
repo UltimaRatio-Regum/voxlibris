@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ProjectTree, type TreeSelection } from "@/components/ProjectTree";
 import { ProjectDetailPanel } from "@/components/ProjectDetailPanel";
 import { BulkOverridePanel } from "@/components/BulkOverridePanel";
+import { BackupProjectDialog } from "@/components/BackupProjectDialog";
 import type { ProjectData, ProjectChunk } from "@shared/schema";
 
 interface ProjectEditorProps {
@@ -131,8 +132,8 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
       </div>
 
       <div className="grid grid-cols-12 gap-4">
-        <Card className="col-span-12 md:col-span-4">
-          <ScrollArea className="h-[calc(100vh-200px)]">
+        <Card className="col-span-12 md:col-span-4 flex flex-col h-[calc(100vh-200px)]">
+          <ScrollArea className="flex-1 overflow-hidden">
             <div className="p-3">
               <ProjectTree
                 project={project}
@@ -143,6 +144,9 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
               />
             </div>
           </ScrollArea>
+          <div className="p-3 border-t shrink-0">
+            <BackupProjectDialog project={project} />
+          </div>
         </Card>
 
         <Card className="col-span-12 md:col-span-8">

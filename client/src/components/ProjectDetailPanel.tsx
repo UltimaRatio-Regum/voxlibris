@@ -1014,6 +1014,22 @@ function ProjectSettingsPanel({
           {saveMutation.isPending ? "Saving..." : "Save Settings"}
         </Button>
 
+        {project.hasSourceFile && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const a = document.createElement("a");
+              a.href = `/api/projects/${project.id}/source-file`;
+              a.click();
+            }}
+            data-testid="button-download-source"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Download Source
+          </Button>
+        )}
+
         <Button
           variant="outline"
           onClick={handleExport}

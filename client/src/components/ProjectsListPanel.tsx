@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Book, Calendar, Layers, FileText, ChevronRight, Loader2, Trash2 } from "lucide-react";
+import { Book, Calendar, Layers, FileText, ChevronRight, Loader2, Trash2, Clock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -17,10 +18,45 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { useToast } from "@/hooks/use-toast";
-import type { ProjectListItem, ProjectData } from "@shared/schema";
+import type { ProjectListItem, ProjectData, GenerationProgress, SegmentationProgress } from "@shared/schema";
 
 interface ProjectsListPanelProps {
   onSelectProject: (projectId: string) => void;
+}
+
+function formatSegEta(progress: SegmentationProgress): string | null {
+  const { processedBytes, totalBytes, startedAt } = progress;
+  const remaining = totalBytes - processedBytes;
+  if (remaining <= 0 || !startedAt || processedBytes === 0) return null;
+
+  const elapsedMs = Date.now() - new Date(startedAt).getTime();
+  if (elapsedMs <= 0) return null;
+
+  const ratePerMs = processedBytes / elapsedMs;
+  const etaMs = remaining / ratePerMs;
+  const etaMins = Math.round(etaMs / 60_000);
+
+  if (etaMins < 1) return "< 1 min remaining";
+  if (etaMins === 1) return "~1 min remaining";
+  return `~${etaMins} min remaining`;
+}
+
+function formatEta(progress: GenerationProgress): string | null {
+  const { completedChunks, failedChunks, totalChunks, firstCompletedAt } = progress;
+  const remaining = totalChunks - completedChunks - failedChunks;
+  if (remaining <= 0) return null;
+  if (!firstCompletedAt || completedChunks === 0) return null;
+
+  const elapsedMs = Date.now() - new Date(firstCompletedAt).getTime();
+  if (elapsedMs <= 0) return null;
+
+  const ratePerMs = completedChunks / elapsedMs;
+  const etaMs = remaining / ratePerMs;
+  const etaMins = Math.round(etaMs / 60_000);
+
+  if (etaMins < 1) return "< 1 min remaining";
+  if (etaMins === 1) return "~1 min remaining";
+  return `~${etaMins} min remaining`;
 }
 
 const statusColors: Record<string, string> = {
@@ -124,13 +160,68 @@ export function ProjectsListPanel({ onSelectProject }: ProjectsListPanelProps) {
                         </span>
                       )}
                     </div>
+                    {project.segmentationProgress && (() => {
+                      const sp = project.segmentationProgress!;
+                      const pct = sp.totalBytes > 0
+                        ? Math.round((sp.processedBytes / sp.totalBytes) * 100)
+                        : 0;
+                      const eta = formatSegEta(sp);
+                      return (
+                        <div className="mt-2 space-y-1">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Segmenting… {pct}%
+                            </span>
+                            {eta && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {eta}
+                              </span>
+                            )}
+                          </div>
+                          <Progress value={pct} className="h-1.5" />
+                        </div>
+                      );
+                    })()}
+                    {project.generationProgress && (() => {
+                      const gp = project.generationProgress!;
+                      const pct = gp.totalChunks > 0
+                        ? Math.round(((gp.completedChunks + gp.failedChunks) / gp.totalChunks) * 100)
+                        : 0;
+                      const eta = formatEta(gp);
+                      return (
+                        <div className="mt-2 space-y-1">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              {gp.completedChunks}/{gp.totalChunks} chunks ({pct}%)
+                            </span>
+                            {eta && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {eta}
+                              </span>
+                            )}
+                          </div>
+                          <Progress value={pct} className="h-1.5" />
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className={statusColors[project.status] || ""}>
-                    {project.status === "segmenting" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                    {project.status}
-                  </Badge>
+                  {project.generationProgress ? (
+                    <Badge variant="outline" className={statusColors["generating"]}>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      generating
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className={statusColors[project.status] || ""}>
+                      {project.status === "segmenting" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                      {project.status}
+                    </Badge>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"

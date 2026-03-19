@@ -259,6 +259,9 @@ class Project(Base):
     meta_year = Column(String, nullable=True)
     meta_description = Column(Text, nullable=True)
     meta_cover_image = Column(LargeBinary, nullable=True)
+    source_file_data = Column(LargeBinary, nullable=True)
+    source_file_ext = Column(String, nullable=True)
+    segmentation_started_at = Column(DateTime, nullable=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -376,6 +379,9 @@ def _migrate_columns(db_engine):
         ("tts_jobs", "project_id", "ALTER TABLE tts_jobs ADD COLUMN project_id VARCHAR"),
         ("tts_jobs", "export_format", "ALTER TABLE tts_jobs ADD COLUMN export_format VARCHAR"),
         ("tts_jobs", "output_audio_file_id", "ALTER TABLE tts_jobs ADD COLUMN output_audio_file_id VARCHAR"),
+        ("projects", "source_file_data", "ALTER TABLE projects ADD COLUMN source_file_data BYTEA"),
+        ("projects", "source_file_ext", "ALTER TABLE projects ADD COLUMN source_file_ext VARCHAR"),
+        ("projects", "segmentation_started_at", "ALTER TABLE projects ADD COLUMN segmentation_started_at TIMESTAMP"),
     ]
     
     with db_engine.connect() as conn:

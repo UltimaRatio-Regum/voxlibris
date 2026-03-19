@@ -337,12 +337,29 @@ export const projectSchema = z.object({
   metaYear: z.string().nullable(),
   metaDescription: z.string().nullable(),
   hasCoverImage: z.boolean().default(false),
+  hasSourceFile: z.boolean().default(false),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
   chapters: z.array(projectChapterSchema).optional(),
   audioFiles: z.array(projectAudioFileSchema).optional(),
 });
 export type ProjectData = z.infer<typeof projectSchema>;
+
+export const segmentationProgressSchema = z.object({
+  totalBytes: z.number(),
+  processedBytes: z.number(),
+  startedAt: z.string().nullable(),
+});
+export type SegmentationProgress = z.infer<typeof segmentationProgressSchema>;
+
+export const generationProgressSchema = z.object({
+  totalChunks: z.number(),
+  completedChunks: z.number(),
+  failedChunks: z.number(),
+  activeJobCount: z.number(),
+  firstCompletedAt: z.string().nullable(),
+});
+export type GenerationProgress = z.infer<typeof generationProgressSchema>;
 
 export const projectListItemSchema = z.object({
   id: z.string(),
@@ -353,6 +370,8 @@ export const projectListItemSchema = z.object({
   totalChunks: z.number(),
   createdAt: z.string().nullable(),
   updatedAt: z.string().nullable(),
+  generationProgress: generationProgressSchema.nullable().optional(),
+  segmentationProgress: segmentationProgressSchema.nullable().optional(),
 });
 export type ProjectListItem = z.infer<typeof projectListItemSchema>;
 
