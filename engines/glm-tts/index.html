@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLM-TTS - Test Console</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117;
+      color: #e2e0eb;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #34d399, #059669);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.25rem;
+    }
+    .subtitle { color: #8b949e; font-size: 0.875rem; margin-bottom: 2rem; }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #34d399;
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #8b949e;
+      margin-bottom: 0.35rem;
+    }
+    textarea, input[type="text"], input[type="number"], select {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      color: #e2e0eb;
+      font-size: 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus, input:focus, select:focus { border-color: #34d399; }
+    textarea { resize: vertical; min-height: 100px; }
+    .field { margin-bottom: 1rem; }
+    .row { display: flex; gap: 1rem; }
+    .row > .field { flex: 1; }
+    .char-count {
+      text-align: right;
+      font-size: 0.7rem;
+      color: #8b949e;
+      margin-top: 0.25rem;
+    }
+    .char-count.over { color: #f87171; }
+    .file-upload {
+      border: 2px dashed #30363d;
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .file-upload:hover { border-color: #34d399; background: rgba(52,211,153,0.04); }
+    .file-upload.has-file { border-color: #34d399; background: rgba(52,211,153,0.06); }
+    .file-upload input { display: none; }
+    .file-upload-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .file-upload-text { font-size: 0.85rem; color: #8b949e; }
+    .file-upload-text strong { color: #34d399; }
+    .file-name { font-size: 0.8rem; color: #34d399; margin-top: 0.5rem; }
+    .clone-note {
+      font-size: 0.75rem;
+      color: #8b949e;
+      margin-top: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(52,211,153,0.04);
+      border-radius: 6px;
+      border: 1px solid rgba(52,211,153,0.12);
+    }
+    .play-ref { display: none; margin-top: 0.75rem; }
+    .play-ref.visible { display: block; }
+    .play-ref audio { width: 100%; }
+    .play-ref-label { font-size: 0.75rem; color: #8b949e; margin-bottom: 0.25rem; }
+    button.generate {
+      width: 100%;
+      padding: 0.85rem;
+      background: linear-gradient(135deg, #059669, #047857);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button.generate:hover { opacity: 0.9; }
+    button.generate:disabled { opacity: 0.5; cursor: not-allowed; }
+    .result-area { margin-top: 1.25rem; }
+    .result-area.hidden { display: none; }
+    audio { width: 100%; margin: 0.75rem 0; }
+    .download-link {
+      display: inline-block;
+      padding: 0.5rem 1rem;
+      background: #34d399;
+      color: #0d1117;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .download-link:hover { opacity: 0.9; }
+    .error-box {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      padding: 0.85rem;
+      color: #fca5a5;
+      font-size: 0.85rem;
+    }
+    .status {
+      text-align: center;
+      padding: 1rem;
+      color: #8b949e;
+      font-size: 0.9rem;
+    }
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid #30363d;
+      border-top-color: #34d399;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .health-badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 99px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .health-badge.ok     { background: rgba(52,211,153,0.15); color: #34d399; }
+    .health-badge.error  { background: rgba(239,68,68,0.15);  color: #ef4444; }
+    .health-badge.loading{ background: rgba(52,211,153,0.10); color: #6ee7b7; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem; }
+    .emotion-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.4rem;
+    }
+    .emotion-chip {
+      padding: 0.45rem 0.5rem;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      text-align: center;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .emotion-chip:hover { border-color: #34d399; background: rgba(52,211,153,0.05); }
+    .emotion-chip.selected { border-color: #34d399; background: rgba(52,211,153,0.15); color: #34d399; font-weight: 600; }
+    .emotion-chip .em-icon { font-size: 1rem; display: block; margin-bottom: 0.15rem; }
+    .intensity-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .intensity-row label { margin-bottom: 0; flex-shrink: 0; }
+    .intensity-row input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      background: #30363d;
+      border-radius: 3px;
+      outline: none;
+    }
+    .intensity-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: #34d399;
+      cursor: pointer;
+    }
+    .intensity-val {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #34d399;
+      min-width: 2rem;
+      text-align: right;
+    }
+    .hint {
+      font-size: 0.72rem;
+      color: #8b949e;
+      margin-top: 0.3rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-row">
+      <h1>GLM-TTS Test Console</h1>
+      <span id="healthBadge" class="health-badge loading">checking…</span>
+    </div>
+    <p class="subtitle">Zhipu AI GLM-TTS &mdash; Zero-shot bilingual voice cloning (Chinese &amp; English)</p>
+
+    <!-- Text input -->
+    <div class="card">
+      <div class="card-title">Text to Synthesize</div>
+      <div class="field">
+        <label for="inputText">Text (max 500 characters) &mdash; Chinese, English, or mixed</label>
+        <textarea id="inputText" placeholder="Enter the text you want to convert to speech…">The quick brown fox jumped over the lazy dog.</textarea>
+        <div class="char-count" id="charCount">45 / 500</div>
+      </div>
+    </div>
+
+    <!-- Voice reference -->
+    <div class="card">
+      <div class="card-title">Voice Reference (Required)</div>
+      <div class="field">
+        <div class="file-upload" id="dropZone">
+          <input type="file" id="voiceFile" accept=".wav,.mp3,audio/wav,audio/mpeg">
+          <div class="file-upload-icon">&#127908;</div>
+          <div class="file-upload-text">
+            <strong>Click to upload</strong> or drag &amp; drop a WAV / MP3 file
+          </div>
+          <div class="file-name" id="fileName"></div>
+        </div>
+        <div class="clone-note">
+          GLM-TTS clones the speaker identity from a 3&ndash;10 second reference clip.
+          Clear speech with minimal background noise gives the best results.
+          Both Chinese and English references are supported.
+        </div>
+        <div class="play-ref" id="playRef">
+          <div class="play-ref-label">Reference preview:</div>
+          <audio controls id="refAudio"></audio>
+        </div>
+      </div>
+
+      <!-- Optional prompt text -->
+      <div class="field">
+        <label for="promptText">Reference transcript <span style="font-weight:400;color:#6e7681">(optional — improves speaker similarity)</span></label>
+        <textarea id="promptText" style="min-height:60px"
+          placeholder="Paste the exact text spoken in the reference audio clip…"></textarea>
+        <p class="hint">Leave blank if unknown. Providing the correct transcript significantly improves voice cloning quality.</p>
+      </div>
+    </div>
+
+    <!-- Emotion -->
+    <div class="card">
+      <div class="card-title">Emotion</div>
+      <div class="emotion-grid" id="emotionGrid"></div>
+      <div class="intensity-row">
+        <label>Intensity</label>
+        <input type="range" id="intensity" min="1" max="100" value="50">
+        <span class="intensity-val" id="intensityVal">50</span>
+      </div>
+    </div>
+
+    <!-- Audio adjustments -->
+    <div class="card">
+      <div class="card-title">Audio Adjustments</div>
+      <div class="row">
+        <div class="field">
+          <label for="volume">Volume (1–100)</label>
+          <input type="number" id="volume" value="75" min="1" max="100">
+        </div>
+        <div class="field">
+          <label for="speed">Speed (-5 to 5)</label>
+          <input type="number" id="speed" value="0" min="-5" max="5" step="0.5">
+        </div>
+        <div class="field">
+          <label for="pitch">Pitch (-5 to 5)</label>
+          <input type="number" id="pitch" value="0" min="-5" max="5" step="0.5">
+        </div>
+      </div>
+    </div>
+
+    <!-- Auth -->
+    <div class="card">
+      <div class="card-title">Authentication</div>
+      <label for="apiKey">API Key (if configured on server)</label>
+      <input type="text" id="apiKey" placeholder="Leave empty if no auth required">
+    </div>
+
+    <button class="generate" id="generateBtn" onclick="generate()">Generate Speech</button>
+
+    <div class="result-area hidden" id="resultArea">
+      <div class="card">
+        <div class="card-title">Result</div>
+        <div id="resultContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const emotions = [
+      { id: "neutral",    label: "Neutral",    icon: "\u{1F610}" },
+      { id: "happy",      label: "Happy",      icon: "\u{1F60A}" },
+      { id: "sad",        label: "Sad",        icon: "\u{1F622}" },
+      { id: "angry",      label: "Angry",      icon: "\u{1F620}" },
+      { id: "fear",       label: "Fear",       icon: "\u{1F628}" },
+      { id: "surprise",   label: "Surprise",   icon: "\u{1F632}" },
+      { id: "excited",    label: "Excited",    icon: "\u{1F929}" },
+      { id: "calm",       label: "Calm",       icon: "\u{1F60C}" },
+      { id: "anxious",    label: "Anxious",    icon: "\u{1F630}" },
+      { id: "hopeful",    label: "Hopeful",    icon: "\u{1F31F}" },
+      { id: "melancholy", label: "Melancholy", icon: "\u{1F614}" },
+      { id: "disgust",    label: "Disgust",    icon: "\u{1F922}" },
+    ];
+
+    let selectedEmotion = "neutral";
+    let voiceBase64 = null;
+
+    // Build emotion grid
+    const emotionGrid = document.getElementById("emotionGrid");
+    emotions.forEach(e => {
+      const chip = document.createElement("div");
+      chip.className = "emotion-chip" + (e.id === selectedEmotion ? " selected" : "");
+      chip.dataset.emotion = e.id;
+      chip.onclick = () => selectEmotion(chip);
+      chip.innerHTML = '<span class="em-icon">' + e.icon + '</span>' + e.label;
+      emotionGrid.appendChild(chip);
+    });
+
+    function selectEmotion(el) {
+      document.querySelectorAll(".emotion-chip").forEach(c => c.classList.remove("selected"));
+      el.classList.add("selected");
+      selectedEmotion = el.dataset.emotion;
+    }
+
+    // Intensity slider
+    const intensitySlider = document.getElementById("intensity");
+    const intensityVal    = document.getElementById("intensityVal");
+    intensitySlider.addEventListener("input", () => {
+      intensityVal.textContent = intensitySlider.value;
+    });
+
+    // Character counter
+    const inputText = document.getElementById("inputText");
+    const charCount = document.getElementById("charCount");
+    inputText.addEventListener("input", updateCharCount);
+    function updateCharCount() {
+      const len = inputText.value.length;
+      charCount.textContent = len + " / 500";
+      charCount.className = "char-count" + (len > 500 ? " over" : "");
+    }
+    updateCharCount();
+
+    // File upload / drag-drop
+    const dropZone  = document.getElementById("dropZone");
+    const voiceFile = document.getElementById("voiceFile");
+    const fileNameEl= document.getElementById("fileName");
+
+    dropZone.addEventListener("click", () => voiceFile.click());
+    dropZone.addEventListener("dragover", e => {
+      e.preventDefault();
+      dropZone.style.borderColor = "#34d399";
+    });
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.style.borderColor = "";
+    });
+    dropZone.addEventListener("drop", e => {
+      e.preventDefault();
+      dropZone.style.borderColor = "";
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    voiceFile.addEventListener("change", () => {
+      if (voiceFile.files.length) handleFile(voiceFile.files[0]);
+    });
+
+    function handleFile(file) {
+      fileNameEl.textContent = file.name + " (" + (file.size / 1024).toFixed(1) + " KB)";
+      dropZone.classList.add("has-file");
+
+      const refUrl = URL.createObjectURL(file);
+      document.getElementById("refAudio").src = refUrl;
+      document.getElementById("playRef").classList.add("visible");
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const bytes = new Uint8Array(reader.result);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        voiceBase64 = btoa(binary);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    async function generate() {
+      const btn           = document.getElementById("generateBtn");
+      const resultArea    = document.getElementById("resultArea");
+      const resultContent = document.getElementById("resultContent");
+      const text          = inputText.value.trim();
+
+      if (!text)         { alert("Please enter some text to synthesize."); return; }
+      if (!voiceBase64)  { alert("Please upload a voice reference file."); return; }
+
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+      resultArea.classList.remove("hidden");
+      resultContent.innerHTML =
+        '<div class="status"><span class="spinner"></span> Cloning voice and synthesizing audio…</div>';
+
+      const payload = {
+        input_text:            text,
+        voice_to_clone_sample: voiceBase64,
+        emotion_set:           [selectedEmotion],
+        intensity:             parseInt(intensitySlider.value) || 50,
+        volume:                parseInt(document.getElementById("volume").value) || 75,
+        speed_adjust:          parseFloat(document.getElementById("speed").value) || 0,
+        pitch_adjust:          parseFloat(document.getElementById("pitch").value) || 0,
+      };
+
+      try {
+        const hdrs = { "Content-Type": "application/json" };
+        const apiKey = document.getElementById("apiKey").value.trim();
+        if (apiKey) hdrs["Authorization"] = "Bearer " + apiKey;
+
+        const resp = await fetch("/ConvertTextToSpeech", {
+          method: "POST",
+          headers: hdrs,
+          body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json();
+          resultContent.innerHTML =
+            '<div class="error-box"><strong>' +
+            (err.error_code || "Error") + ":</strong> " + err.error +
+            (err.details ? "<br><span style='opacity:.75'>" + err.details + "</span>" : "") +
+            "</div>";
+          return;
+        }
+
+        const blob = await resp.blob();
+        const url  = URL.createObjectURL(blob);
+        resultContent.innerHTML =
+          '<audio controls autoplay src="' + url + '"></audio>' +
+          '<a class="download-link" href="' + url + '" download="glm_tts_output.wav">Download WAV</a>';
+      } catch (e) {
+        resultContent.innerHTML =
+          '<div class="error-box">Request failed: ' + e.message + "</div>";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate Speech";
+      }
+    }
+
+    async function checkHealth() {
+      const badge = document.getElementById("healthBadge");
+      try {
+        const resp = await fetch("/health");
+        const data = await resp.json();
+        if (data.model_loaded) {
+          badge.textContent = "Model Ready (" + data.device + ")";
+          badge.className = "health-badge ok";
+        } else {
+          badge.textContent = "Loading Model…";
+          badge.className = "health-badge loading";
+          setTimeout(checkHealth, 5000);
+        }
+      } catch {
+        badge.textContent = "Offline";
+        badge.className = "health-badge error";
+        setTimeout(checkHealth, 10000);
+      }
+    }
+    checkHealth();
+  </script>
+</body>
+</html>
