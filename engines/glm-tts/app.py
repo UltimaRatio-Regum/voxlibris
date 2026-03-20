@@ -22,7 +22,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import Response, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("glm-tts-engine")
@@ -284,7 +284,12 @@ async def convert_text_to_speech(request: Request):
         # ------------------------------------------------------------------ #
         # Feature extraction from reference audio                             #
         # ------------------------------------------------------------------ #
-        from glmtts_inference import generate_long  # noqa: PLC0415
+        from glmtts_inference import generate_long, local_llm_forward as _base_llm_fwd  # noqa: PLC0415
+        import functools
+        # Use top-k=10 for more conservative, coherent sampling. The default
+        # "ras" method runs at fixed temperature=1 which causes gibberish.
+        # "topk" also actively avoids emitting end-of-audio tokens mid-sentence.
+        _llm_fwd = functools.partial(_base_llm_fwd, sampling=10, sample_method="topk")
 
         norm_prompt = _text_frontend.text_normalize("") + " "
         norm_input = _text_frontend.text_normalize(text)
@@ -327,13 +332,19 @@ async def convert_text_to_speech(request: Request):
             embedding=embedding,
             flow_prompt_token=flow_prompt_token,
             speech_feat=speech_feat,
-            sample_method="ras",
+            sample_method="topk",
             seed=seed,
             device=_device,
             use_phoneme=False,
+            local_llm_forward=_llm_fwd,
         )
 
         audio_np = tts_speech.squeeze().cpu().numpy().astype(np.float32)
+
+        # Prepend ~120ms of silence to compensate for the model's tendency to
+        # cut off the first few tokens when no reference transcript is provided.
+        lead_silence = np.zeros(int(SAMPLE_RATE * 0.12), dtype=np.float32)
+        audio_np = np.concatenate([lead_silence, audio_np])
 
         # ------------------------------------------------------------------ #
         # Post-processing: prosody + volume                                   #

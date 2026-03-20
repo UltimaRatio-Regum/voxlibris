@@ -85,5 +85,5 @@ The `intensity` parameter (1-100) scales the emotion effect; 50 is the neutral b
 2. Upload the contents of this folder
 3. Set the `API_KEY` secret in Space settings (optional)
 4. The model (~several GB) downloads automatically from `zai-org/GLM-TTS` on first startup
-5. CPU inference is supported but slow; a GPU Space is recommended for production use
+5. **A GPU is required** — the upstream inference code calls `.cuda()` unconditionally (T4 minimum)
 6. Register the Space URL in VoxLibris Settings under TTS Engine Management

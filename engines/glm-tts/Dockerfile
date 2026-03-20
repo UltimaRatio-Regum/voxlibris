@@ -18,11 +18,12 @@ RUN git clone https://github.com/zai-org/GLM-TTS.git /app
 
 WORKDIR /app
 
-# Install PyTorch CPU first (requires a separate index URL), then the rest of
-# the inference-only dependencies from requirements.txt.
+# Install PyTorch with CUDA 12.1 support — glmtts_inference.py calls .cuda()
+# unconditionally so a CUDA-enabled build is required. cu121 is the standard
+# CUDA version for HuggingFace GPU Spaces (T4/A10G).
 RUN pip install --no-cache-dir \
     torch==2.3.1 torchaudio==2.3.1 \
-    --index-url https://download.pytorch.org/whl/cpu
+    --index-url https://download.pytorch.org/whl/cu121
 
 COPY requirements.txt .
 
@@ -38,6 +39,13 @@ RUN pip install --no-cache-dir setuptools && \
 # glmtts_inference.py so Python can import it without path manipulation.
 COPY app.py .
 COPY index.html .
+
+# WeTextProcessing (tn) compiles FST files on first import and writes them back
+# into its site-packages directory. Pre-build them now while still running as
+# root so the files exist and are readable when the app runs as the user.
+RUN python -c "from tn.chinese.normalizer import Normalizer; Normalizer()" && \
+    python -c "from tn.english.normalizer import Normalizer; Normalizer()" && \
+    chmod -R a+w /usr/local/lib/python3.11/site-packages/tn/
 
 RUN chown -R user:user /app
 USER user

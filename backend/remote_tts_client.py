@@ -54,6 +54,7 @@ class TTSRequest:
     volume: int = 75
     speed_adjust: float = 0.0
     pitch_adjust: float = 0.0
+    engine_options: Optional[Dict[str, Any]] = None
 
 
 def normalize_hf_spaces_url(url: str) -> str:
@@ -140,6 +141,9 @@ class RemoteTTSClient:
             payload["voice_to_clone_sample"] = base64.b64encode(
                 request.voice_to_clone_sample
             ).decode("ascii")
+
+        if request.engine_options:
+            payload["engine_options"] = request.engine_options
 
         async with httpx.AsyncClient(timeout=TIMEOUT_TTS) as client:
             resp = await client.post(
