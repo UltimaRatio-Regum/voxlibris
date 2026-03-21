@@ -184,6 +184,7 @@ class TTSEngineEndpoint(Base):
     base_voices_json = Column(Text, nullable=True)
     supported_emotions_json = Column(Text, nullable=True)
     extra_properties_json = Column(Text, nullable=True)
+    engine_params_json = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     is_shared = Column(Boolean, nullable=False, default=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=True)
@@ -258,6 +259,7 @@ class Project(Base):
     meta_genre = Column(String, nullable=True)
     meta_year = Column(String, nullable=True)
     meta_description = Column(Text, nullable=True)
+    engine_options_json = Column(Text, nullable=True)
     meta_cover_image = Column(LargeBinary, nullable=True)
     source_file_data = Column(LargeBinary, nullable=True)
     source_file_ext = Column(String, nullable=True)
@@ -387,6 +389,8 @@ def _migrate_columns(db_engine):
         ("projects", "total_text_length", "ALTER TABLE projects ADD COLUMN total_text_length INTEGER"),
         ("project_audio_files", "audio_data_nullable", "ALTER TABLE project_audio_files ALTER COLUMN audio_data DROP NOT NULL"),
         ("project_audio_files", "file_path", "ALTER TABLE project_audio_files ADD COLUMN file_path VARCHAR"),
+        ("tts_engine_endpoints", "engine_params_json", "ALTER TABLE tts_engine_endpoints ADD COLUMN engine_params_json TEXT"),
+        ("projects", "engine_options_json", "ALTER TABLE projects ADD COLUMN engine_options_json TEXT"),
     ]
     
     with db_engine.connect() as conn:

@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 from database import init_database, get_db_session, VoiceLibraryEntry
 
 VOICE_SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "voice_samples")
+LIBRITTS_SAMPLES_DIR = os.path.join(VOICE_SAMPLES_DIR, "libritts_samples")
 
 
 def format_location(location: str, language: str) -> str:
@@ -154,8 +155,85 @@ def load_voice_samples():
     print(f"Total unique voice IDs found: {len(seen_ids)}")
 
 
+def load_libritts_samples():
+    if not os.path.exists(LIBRITTS_SAMPLES_DIR):
+        print(f"LibriTTS samples directory not found: {LIBRITTS_SAMPLES_DIR}")
+        return
+
+    init_database()
+    db = get_db_session()
+
+    loaded = 0
+    skipped = 0
+
+    for wav_file in sorted(os.listdir(LIBRITTS_SAMPLES_DIR)):
+        if not wav_file.endswith(".wav"):
+            continue
+
+        # Expected filename: speaker-{id}.wav
+        name_part = wav_file[:-4]  # strip .wav
+        if not name_part.startswith("speaker-"):
+            continue
+
+        speaker_num = name_part[len("speaker-"):]
+        voice_id = f"libritts-{speaker_num}"
+
+        existing = db.query(VoiceLibraryEntry).filter(VoiceLibraryEntry.id == voice_id).first()
+        if existing:
+            skipped += 1
+            continue
+
+        wav_path = os.path.join(LIBRITTS_SAMPLES_DIR, wav_file)
+
+        try:
+            with open(wav_path, "rb") as f:
+                audio_data = f.read()
+        except Exception as e:
+            print(f"  Skipping {voice_id}: failed to read {wav_file}: {e}")
+            continue
+
+        duration = 0.0
+        try:
+            import wave
+            with wave.open(wav_path, "rb") as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                duration = frames / float(rate) if rate > 0 else 0.0
+        except Exception:
+            pass
+
+        entry = VoiceLibraryEntry(
+            id=voice_id,
+            name=f"LibriTTS Speaker {speaker_num}",
+            gender="U",
+            age=None,
+            language=None,
+            location=None,
+            transcript=None,
+            duration=duration,
+            audio_data=audio_data,
+            alt_audio_data=None,
+        )
+        db.add(entry)
+        loaded += 1
+
+        if loaded % 10 == 0:
+            db.commit()
+            print(f"  Loaded {loaded} LibriTTS voices...")
+
+    db.commit()
+    db.close()
+
+    print(f"\nDone! Loaded {loaded} new LibriTTS voices, skipped {skipped} existing.")
+
+
 if __name__ == "__main__":
     print("VoxLibris Voice Library Initialization")
     print(f"Source: {VOICE_SAMPLES_DIR}")
     print()
     load_voice_samples()
+    print()
+    print("Loading LibriTTS samples...")
+    print(f"Source: {LIBRITTS_SAMPLES_DIR}")
+    print()
+    load_libritts_samples()

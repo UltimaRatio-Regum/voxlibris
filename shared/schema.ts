@@ -336,6 +336,7 @@ export const projectSchema = z.object({
   metaGenre: z.string().nullable(),
   metaYear: z.string().nullable(),
   metaDescription: z.string().nullable(),
+  engineOptions: z.record(z.any()).nullable().optional(),
   hasCoverImage: z.boolean().default(false),
   hasSourceFile: z.boolean().default(false),
   createdAt: z.string().nullable(),

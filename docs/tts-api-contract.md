@@ -87,6 +87,23 @@ The response is a flat dictionary of engine properties. The following keys are d
 | `builtin_voices` | `array` | Yes | List of available built-in voices. Empty array `[]` if no built-in voices. See **Voice Object** below. |
 | `supported_emotions` | `array` | No | List of emotion names the engine natively handles. If omitted, VoxLibris will pass emotions but the engine may ignore them. |
 | `extra_properties` | `object` | No | Reserved for future engine-specific configuration. Should be an empty object `{}` if unused. |
+| `engine_params` | `array` | No | Declares engine-specific tunable parameters. VoxLibris reads this once on registration and presents the parameters as UI controls. Each entry is a **Parameter Object** (see below). Omit or return `[]` if the engine has no tunable knobs. |
+
+#### Parameter Object Schema
+
+Each entry in `engine_params` has the following structure:
+
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| `short_name` | `string` | Yes | Machine-readable key, used as the key in `engine_options` when calling `ConvertTextToSpeech`. |
+| `friendly_name` | `string` | Yes | Human-readable label shown in the UI. |
+| `data_type` | `string` | Yes | One of `"int"`, `"float"`, `"string"`, `"list"`. Controls the input widget rendered by VoxLibris. |
+| `default_value` | any | Yes | Default value used when no value has been set by the user. |
+| `min_value` | `number` | No | Minimum value for `int` / `float` parameters. |
+| `max_value` | `number` | No | Maximum value for `int` / `float` parameters. |
+| `list_options` | `array[string]` | No | Required when `data_type` is `"list"`. The allowed option values. |
+
+---
 
 #### Voice Object Schema
 
@@ -137,6 +154,7 @@ Converts input text to speech audio. Returns a PCM-encoded WAV file.
 | `volume` | `integer` | No | `75` | Output volume, range `1`–`100`. Scale to engine's internal range. |
 | `speed_adjust` | `float` | No | `0.0` | Speed adjustment as a percentage, range `-5.0` to `5.0`. Positive = faster, negative = slower. For example, `2.0` means 2% faster. Engines with complex emotion handling may choose to ignore this. |
 | `pitch_adjust` | `float` | No | `0.0` | Pitch adjustment as a percentage, range `-5.0` to `5.0`. Positive = higher pitch, negative = lower. For example, `-1.5` means 1.5% lower pitch. Engines with complex emotion handling may choose to ignore this. |
+| `engine_options` | `object\|null` | No | `null` | Engine-specific parameters declared via `GetEngineDetails.engine_params`. Keys and value types are engine-defined. Engines that don't recognize this field should ignore it entirely. |
 
 #### Response
 
@@ -302,6 +320,23 @@ The response body is the raw bytes of a PCM-encoded WAV file. The audio format (
     "extra_properties": {
       "type": "object",
       "description": "Reserved for future engine-specific configuration"
+    },
+    "engine_params": {
+      "type": "array",
+      "description": "Engine-specific tunable parameters exposed to the VoxLibris UI",
+      "items": {
+        "type": "object",
+        "required": ["short_name", "friendly_name", "data_type", "default_value"],
+        "properties": {
+          "short_name": { "type": "string" },
+          "friendly_name": { "type": "string" },
+          "data_type": { "type": "string", "enum": ["int", "float", "string", "list"] },
+          "default_value": {},
+          "min_value": { "type": "number" },
+          "max_value": { "type": "number" },
+          "list_options": { "type": "array", "items": { "type": "string" } }
+        }
+      }
     }
   },
   "additionalProperties": true
@@ -374,8 +409,13 @@ The response body is the raw bytes of a PCM-encoded WAV file. The audio format (
       "maximum": 5.0,
       "default": 0.0,
       "description": "Pitch adjustment percentage"
+    },
+    "engine_options": {
+      "type": ["object", "null"],
+      "description": "Engine-specific parameters. Keys and value types are engine-defined. Engines that don't recognize this field should ignore it.",
+      "additionalProperties": true
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }
 ```

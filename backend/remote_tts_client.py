@@ -40,6 +40,7 @@ class EngineDetails:
     base_voices: List[BuiltinVoice] = field(default_factory=list)
     supported_emotions: List[str] = field(default_factory=list)
     extra_properties: Dict[str, Any] = field(default_factory=dict)
+    engine_params: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -119,6 +120,7 @@ class RemoteTTSClient:
             base_voices=base_voices,
             supported_emotions=data.get("supported_emotions", []),
             extra_properties=data.get("extra_properties", {}),
+            engine_params=data.get("engine_params", []),
         )
 
     async def convert_text_to_speech(self, request: TTSRequest) -> bytes:

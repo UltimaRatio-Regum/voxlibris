@@ -499,6 +499,7 @@ async def list_tts_engines(request: FastAPIRequest):
                 "builtin_voices": json.loads(e.builtin_voices_json) if e.builtin_voices_json else [],
                 "base_voices": json.loads(e.base_voices_json) if e.base_voices_json else [],
                 "supported_emotions": json.loads(e.supported_emotions_json) if e.supported_emotions_json else [],
+                "engine_params": json.loads(e.engine_params_json) if e.engine_params_json else [],
                 "last_tested_at": e.last_tested_at.isoformat() if e.last_tested_at else None,
                 "last_test_success": e.last_test_success,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
@@ -568,6 +569,7 @@ async def add_tts_engine(req: FastAPIRequest, request_body: AddEngineRequestV2 =
             ]) if details.base_voices else None
             existing.supported_emotions_json = json.dumps(details.supported_emotions)
             existing.extra_properties_json = json.dumps(details.extra_properties)
+            existing.engine_params_json = json.dumps(details.engine_params) if details.engine_params else None
             existing.is_active = True
             existing.last_tested_at = datetime.utcnow()
             existing.last_test_success = True
@@ -596,6 +598,7 @@ async def add_tts_engine(req: FastAPIRequest, request_body: AddEngineRequestV2 =
                 ]) if details.base_voices else None,
                 supported_emotions_json=json.dumps(details.supported_emotions),
                 extra_properties_json=json.dumps(details.extra_properties),
+                engine_params_json=json.dumps(details.engine_params) if details.engine_params else None,
                 is_active=True,
                 is_shared=is_shared_req,
                 user_id=user_id,
@@ -632,6 +635,7 @@ async def test_tts_engine(engine_id: str, request: FastAPIRequest):
                 for v in details.base_voices
             ]) if details.base_voices else None
             entry.supported_emotions_json = json.dumps(details.supported_emotions)
+            entry.engine_params_json = json.dumps(details.engine_params) if details.engine_params else None
             entry.updated_at = datetime.utcnow()
             db.commit()
             return {"success": True, "engine_name": details.engine_name, "voices": len(details.builtin_voices)}
@@ -684,8 +688,8 @@ async def get_voice_library_db(request: FastAPIRequest):
                 "location": v.location,
                 "transcript": v.transcript,
                 "duration": v.duration,
-                "audioUrl": f"/voice-library-db/{v.id}/audio",
-                "altAudioUrl": f"/voice-library-db/{v.id}/alt-audio" if v.alt_audio_data else None,
+                "audioUrl": f"/api/voice-library-db/{v.id}/audio",
+                "altAudioUrl": f"/api/voice-library-db/{v.id}/alt-audio" if v.alt_audio_data else None,
                 "hasAudio": bool(v.audio_data),
                 "hasAltAudio": bool(v.alt_audio_data),
             })
@@ -2169,6 +2173,7 @@ class UpdateProjectSettingsRequest(BaseModel):
     metaGenre: Optional[str] = None
     metaYear: Optional[str] = None
     metaDescription: Optional[str] = None
+    engineOptions: Optional[dict] = None
 
 
 class UpdateChapterRequest(BaseModel):
@@ -2317,6 +2322,7 @@ def _serialize_project_full(project: Project, db) -> dict:
         "metaGenre": project.meta_genre,
         "metaYear": project.meta_year,
         "metaDescription": project.meta_description,
+        "engineOptions": json.loads(project.engine_options_json) if getattr(project, 'engine_options_json', None) else None,
         "hasCoverImage": project.meta_cover_image is not None and len(project.meta_cover_image) > 0,
         "hasSourceFile": project.source_file_data is not None and len(project.source_file_data) > 0,
         "createdAt": project.created_at.isoformat() if project.created_at else None,
@@ -2772,6 +2778,8 @@ async def update_project(project_id: str, request: UpdateProjectSettingsRequest,
             project.meta_year = request.metaYear
         if request.metaDescription is not None:
             project.meta_description = request.metaDescription
+        if "engineOptions" in request.model_fields_set:
+            project.engine_options_json = json.dumps(request.engineOptions) if request.engineOptions is not None else None
 
         project.updated_at = datetime.utcnow()
         db.commit()
@@ -3155,6 +3163,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
         pause_duration = project.pause_duration
         narrator_emotion = project.narrator_emotion or "auto"
         dialogue_emotion_mode = project.dialogue_emotion_mode or "per-chunk"
+        engine_options = json.loads(project.engine_options_json) if getattr(project, 'engine_options_json', None) else None
 
         from job_manager import create_job
         from job_runner import start_job_async
@@ -3182,6 +3191,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "baseVoiceId": base_voice_id,
                     "narratorEmotion": narrator_emotion,
                     "dialogueEmotionMode": dialogue_emotion_mode,
+                    "engineOptions": engine_options,
                     "projectId": project_id,
                     "scopeType": "chunk",
                     "scopeId": request.scopeId,
@@ -3227,6 +3237,7 @@ async def generate_project_audio(project_id: str, request: GenerateProjectAudioR
                     "baseVoiceId": base_voice_id,
                     "narratorEmotion": narrator_emotion,
                     "dialogueEmotionMode": dialogue_emotion_mode,
+                    "engineOptions": engine_options,
                     "projectId": project_id,
                     "scopeType": "section",
                     "scopeId": section.id,

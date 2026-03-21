@@ -171,6 +171,7 @@ class ConvertRequest(BaseModel):
     volume: int = Field(default=75, ge=1, le=100)
     speed_adjust: float = Field(default=0.0, ge=-5.0, le=5.0)
     pitch_adjust: float = Field(default=0.0, ge=-5.0, le=5.0)
+    engine_options: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +196,23 @@ async def get_engine_details(request: Request):
             "max_characters": MAX_CHARS,
             "languages": ["zh", "en", "zh-en"],
         },
+        "engine_params": [
+            {
+                "short_name": "sample_method",
+                "friendly_name": "Sample Method",
+                "data_type": "list",
+                "list_options": ["topk", "ras"],
+                "default_value": "topk",
+            },
+            {
+                "short_name": "sampling",
+                "friendly_name": "Top-K Breadth",
+                "data_type": "int",
+                "min_value": 1,
+                "max_value": 25,
+                "default_value": 10,
+            },
+        ],
     }
 
 
@@ -286,10 +304,11 @@ async def convert_text_to_speech(request: Request):
         # ------------------------------------------------------------------ #
         from glmtts_inference import generate_long, local_llm_forward as _base_llm_fwd  # noqa: PLC0415
         import functools
-        # Use top-k=10 for more conservative, coherent sampling. The default
-        # "ras" method runs at fixed temperature=1 which causes gibberish.
-        # "topk" also actively avoids emitting end-of-audio tokens mid-sentence.
-        _llm_fwd = functools.partial(_base_llm_fwd, sampling=10, sample_method="topk")
+        opts = req.engine_options or {}
+        sample_method = opts.get("sample_method", "topk")
+        sampling = int(opts.get("sampling", 10))
+        logger.info(f"Engine options: sample_method={sample_method} sampling={sampling}")
+        _llm_fwd = functools.partial(_base_llm_fwd, sampling=sampling, sample_method=sample_method)
 
         norm_prompt = _text_frontend.text_normalize("") + " "
         norm_input = _text_frontend.text_normalize(text)
@@ -332,7 +351,7 @@ async def convert_text_to_speech(request: Request):
             embedding=embedding,
             flow_prompt_token=flow_prompt_token,
             speech_feat=speech_feat,
-            sample_method="topk",
+            sample_method=sample_method,
             seed=seed,
             device=_device,
             use_phoneme=False,

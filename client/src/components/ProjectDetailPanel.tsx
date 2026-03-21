@@ -324,6 +324,7 @@ function ProjectSettingsPanel({
   const [metaGenre, setMetaGenre] = useState(project.metaGenre || "");
   const [metaYear, setMetaYear] = useState(project.metaYear || "");
   const [metaDescription, setMetaDescription] = useState(project.metaDescription || "");
+  const [engineOptions, setEngineOptions] = useState<Record<string, any>>(project.engineOptions || {});
   const [isExporting, setIsExporting] = useState(false);
   const [inspectedSpeaker, setInspectedSpeaker] = useState<string | null>(null);
   const [resegmentModel, setResegmentModel] = useState(DEFAULT_MODEL.id);
@@ -393,6 +394,7 @@ function ProjectSettingsPanel({
     setMetaGenre(project.metaGenre || "");
     setMetaYear(project.metaYear || "");
     setMetaDescription(project.metaDescription || "");
+    setEngineOptions(project.engineOptions || {});
     setSpeakerConfigs(initSpeakerConfigs());
     setResegmentModel(DEFAULT_MODEL.id);
   }, [project.id]);
@@ -427,6 +429,7 @@ function ProjectSettingsPanel({
         metaYear: metaYear || null,
         metaDescription: metaDescription || null,
         speakersJson: JSON.stringify(speakerConfigs),
+        engineOptions: Object.keys(engineOptions).length > 0 ? engineOptions : null,
       });
     },
     onSuccess: () => {
@@ -488,6 +491,7 @@ function ProjectSettingsPanel({
         metaYear: metaYear || null,
         metaDescription: metaDescription || null,
         speakersJson: JSON.stringify(speakerConfigs),
+        engineOptions: Object.keys(engineOptions).length > 0 ? engineOptions : null,
       });
 
       await apiRequest("POST", `/api/projects/${project.id}/export`, { format: outputFormat });
@@ -622,6 +626,11 @@ function ProjectSettingsPanel({
             const newEngine = registeredEngines.find((e: any) => (e.engine_id || e.id) === v);
             const firstBase = newEngine?.base_voices?.[0]?.id || "";
             setBaseVoiceId(firstBase);
+            const defaults: Record<string, any> = {};
+            for (const p of (newEngine?.engine_params || [])) {
+              defaults[p.short_name] = p.default_value;
+            }
+            setEngineOptions(defaults);
           }}>
             <SelectTrigger data-testid="select-tts-engine">
               <SelectValue />
@@ -686,6 +695,45 @@ function ProjectSettingsPanel({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          );
+        })()}
+
+        {(() => {
+          const engine = registeredEngines.find((e: any) => (e.engine_id || e.id) === ttsEngine);
+          const params: any[] = engine?.engine_params || [];
+          if (params.length === 0) return null;
+          return (
+            <div className="space-y-3">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Model Options</Label>
+              {params.map((p: any) => (
+                <div key={p.short_name} className="space-y-1">
+                  <Label>{p.friendly_name}</Label>
+                  {p.data_type === "list" ? (
+                    <Select
+                      value={String(engineOptions[p.short_name] ?? p.default_value)}
+                      onValueChange={(v) => setEngineOptions((prev) => ({ ...prev, [p.short_name]: v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(p.list_options || []).map((opt: string) => (
+                          <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      type="number"
+                      min={p.min_value}
+                      max={p.max_value}
+                      value={engineOptions[p.short_name] ?? p.default_value}
+                      onChange={(e) => setEngineOptions((prev) => ({ ...prev, [p.short_name]: Number(e.target.value) }))}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
           );
         })()}
@@ -1266,7 +1314,7 @@ function SectionDetailPanel({ section, project, onRefresh }: { section: ProjectS
               </SelectTrigger>
               <SelectContent>
                 {LLM_MODELS.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.label}</SelectItem>
+                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

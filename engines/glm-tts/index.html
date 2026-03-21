@@ -297,6 +297,26 @@
       </div>
     </div>
 
+    <!-- Model Options -->
+    <div class="card">
+      <div class="card-title">Model Options</div>
+      <div class="row">
+        <div class="field">
+          <label for="sampleMethod">Sample Method</label>
+          <select id="sampleMethod" onchange="onSampleMethodChange()">
+            <option value="topk" selected>topk (recommended)</option>
+            <option value="ras">ras</option>
+          </select>
+          <p class="hint">topk: conservative, coherent sampling. ras: random, may produce less stable output.</p>
+        </div>
+        <div class="field" id="samplingField">
+          <label for="sampling">Top-K Breadth (1–25)</label>
+          <input type="number" id="sampling" value="10" min="1" max="25">
+          <p class="hint">Lower = more conservative. Higher = more varied output.</p>
+        </div>
+      </div>
+    </div>
+
     <!-- Auth -->
     <div class="card">
       <div class="card-title">Authentication</div>
@@ -408,6 +428,11 @@
       reader.readAsArrayBuffer(file);
     }
 
+    function onSampleMethodChange() {
+      const method = document.getElementById("sampleMethod").value;
+      document.getElementById("samplingField").style.display = method === "ras" ? "none" : "";
+    }
+
     async function generate() {
       const btn           = document.getElementById("generateBtn");
       const resultArea    = document.getElementById("resultArea");
@@ -423,6 +448,7 @@
       resultContent.innerHTML =
         '<div class="status"><span class="spinner"></span> Cloning voice and synthesizing audio…</div>';
 
+        const sampleMethod = document.getElementById("sampleMethod").value;
       const payload = {
         input_text:            text,
         voice_to_clone_sample: voiceBase64,
@@ -431,6 +457,10 @@
         volume:                parseInt(document.getElementById("volume").value) || 75,
         speed_adjust:          parseFloat(document.getElementById("speed").value) || 0,
         pitch_adjust:          parseFloat(document.getElementById("pitch").value) || 0,
+        engine_options: {
+          sample_method: sampleMethod,
+          sampling: parseInt(document.getElementById("sampling").value) || 10,
+        },
       };
 
       try {

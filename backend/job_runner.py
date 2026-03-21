@@ -168,6 +168,7 @@ async def process_job(job_id: str, cancel_token: threading.Event = None):
     base_voice_id = config.get("baseVoiceId")
     speakers = config.get("speakers", {})
     exaggeration = config.get("defaultExaggeration", 0.5)
+    engine_options = config.get("engineOptions")
 
     remote_client = get_remote_engine(tts_engine)
     if remote_client:
@@ -233,6 +234,7 @@ async def process_job(job_id: str, cancel_token: threading.Event = None):
                     base_voice_id=base_voice_id,
                     sentiment=seg_data.get("sentiment"),
                     exaggeration=exaggeration,
+                    engine_options=engine_options,
                     voice_path_cache=voice_path_cache,
                     temp_files=temp_files,
                 )
@@ -606,6 +608,7 @@ async def generate_segment_audio(
     base_voice_id: str = None,
     sentiment: Dict[str, Any] = None,
     exaggeration: float = 0.5,
+    engine_options: Dict[str, Any] = None,
     voice_path_cache: Dict[str, str] = None,
     temp_files: List[str] = None,
 ) -> np.ndarray:
@@ -687,6 +690,7 @@ async def generate_segment_audio(
                 voice_to_clone_sample=voice_bytes,
                 emotion_set=emotion_set,
                 intensity=int(exaggeration * 100),
+                engine_options=engine_options or None,
             )
             
             wav_bytes = await remote_client.convert_text_to_speech(tts_req)
@@ -724,13 +728,19 @@ def get_library_voice_path(voice_id: str) -> str:
     import tempfile
     
     voice_samples_dir = os.path.join(os.path.dirname(__file__), "..", "voice_samples")
-    mic1_path = os.path.join(voice_samples_dir, f"{voice_id}_mic1.wav")
-    mic2_path = os.path.join(voice_samples_dir, f"{voice_id}_mic2.wav")
-    
-    if os.path.exists(mic1_path):
-        return mic1_path
-    if os.path.exists(mic2_path):
-        return mic2_path
+
+    if voice_id.startswith("libritts-"):
+        speaker_num = voice_id[len("libritts-"):]
+        libritts_path = os.path.join(voice_samples_dir, "libritts_samples", f"speaker-{speaker_num}.wav")
+        if os.path.exists(libritts_path):
+            return libritts_path
+    else:
+        mic1_path = os.path.join(voice_samples_dir, f"{voice_id}_mic1.wav")
+        mic2_path = os.path.join(voice_samples_dir, f"{voice_id}_mic2.wav")
+        if os.path.exists(mic1_path):
+            return mic1_path
+        if os.path.exists(mic2_path):
+            return mic2_path
     
     db = get_db_session()
     try:
