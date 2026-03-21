@@ -2,6 +2,7 @@ import os
 
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 
+import hashlib
 import io
 import base64
 import tempfile
@@ -10,6 +11,7 @@ import wave
 import numpy as np
 import torch
 import pyrubberband as pyrb
+from cachetools import LRUCache
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException
@@ -21,6 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chatterbox-engine")
 
 BEARER_TOKEN = os.environ.get("API_KEY", "")
+VOICE_COND_CACHE_MAXSIZE = 20
 SAMPLE_RATE = 24000
 BIT_DEPTH = 16
 CHANNELS = 1
@@ -130,6 +133,7 @@ CANONICAL_EMOTIONS = [
 ]
 
 tts_model = None
+_voice_cond_cache: LRUCache = LRUCache(maxsize=VOICE_COND_CACHE_MAXSIZE)
 
 
 def load_model():
@@ -377,11 +381,21 @@ async def convert_text_to_speech(request: Request):
                     "error_code": "INVALID_REQUEST"
                 })
 
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp.write(wav_bytes)
-        tmp.close()
-        speaker_wav_path = tmp.name
-        temp_files.append(tmp.name)
+        cache_key = hashlib.sha256(wav_bytes).hexdigest()
+        cached_conds = _voice_cond_cache.get(cache_key)
+
+        if cached_conds is not None:
+            logger.info(f"Voice conditioning cache hit ({cache_key[:8]}...), skipping prepare_conditionals")
+            tts_model.conds = cached_conds
+        else:
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            tmp.write(wav_bytes)
+            tmp.close()
+            temp_files.append(tmp.name)
+            logger.info(f"Voice conditioning cache miss ({cache_key[:8]}...), running prepare_conditionals")
+            tts_model.prepare_conditionals(tmp.name)
+            _voice_cond_cache[cache_key] = tts_model.conds
+            logger.info(f"Voice conditionals cached (cache size: {len(_voice_cond_cache)}/{VOICE_COND_CACHE_MAXSIZE})")
 
         text = req.input_text.strip()
         if len(text) > MAX_CHARS:
@@ -419,7 +433,6 @@ async def convert_text_to_speech(request: Request):
 
         wav = tts_model.generate(
             text,
-            audio_prompt_path=speaker_wav_path,
             exaggeration=exaggeration,
             temperature=temperature,
             cfg_weight=cfg_weight,
