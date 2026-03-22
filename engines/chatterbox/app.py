@@ -134,6 +134,8 @@ CANONICAL_EMOTIONS = [
 
 tts_model = None
 _voice_cond_cache: LRUCache = LRUCache(maxsize=VOICE_COND_CACHE_MAXSIZE)
+_cache_hits: int = 0
+_cache_misses: int = 0
 
 
 def load_model():
@@ -408,13 +410,16 @@ async def convert_text_to_speech(request: Request):
                     "error_code": "INVALID_REQUEST"
                 })
 
+        global _cache_hits, _cache_misses
         cache_key = hashlib.sha256(wav_bytes).hexdigest()
         cached_conds = _voice_cond_cache.get(cache_key)
 
         if cached_conds is not None:
+            _cache_hits += 1
             logger.info(f"Voice conditioning cache hit ({cache_key[:8]}...), skipping prepare_conditionals")
             tts_model.conds = cached_conds
         else:
+            _cache_misses += 1
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             tmp.write(wav_bytes)
             tmp.close()
@@ -518,6 +523,20 @@ async def convert_text_to_speech(request: Request):
                 os.unlink(f)
             except OSError:
                 pass
+
+
+@app.get("/cache-stats")
+async def cache_stats(request: Request):
+    verify_auth(request)
+    total = _cache_hits + _cache_misses
+    return {
+        "cache_size": len(_voice_cond_cache),
+        "cache_maxsize": VOICE_COND_CACHE_MAXSIZE,
+        "cache_keys": [k[:8] + "..." for k in _voice_cond_cache.keys()],
+        "cache_hits": _cache_hits,
+        "cache_misses": _cache_misses,
+        "hit_rate": round(_cache_hits / total, 3) if total > 0 else None,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

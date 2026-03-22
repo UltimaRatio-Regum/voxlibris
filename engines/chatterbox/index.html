@@ -164,6 +164,37 @@
     .health-badge.ok { background: rgba(34,197,94,0.15); color: #22c55e; }
     .health-badge.error { background: rgba(239,68,68,0.15); color: #ef4444; }
     .health-badge.loading { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .cache-stats {
+      margin-top: 1rem;
+      padding: 0.85rem 1rem;
+      background: #12101e;
+      border: 1px solid #2d2a3a;
+      border-radius: 8px;
+      font-size: 0.8rem;
+    }
+    .cache-stats-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #a78bfa;
+      margin-bottom: 0.6rem;
+    }
+    .cache-stat-row { display: flex; justify-content: space-between; margin-bottom: 0.3rem; color: #b0adc0; }
+    .cache-stat-row:last-child { margin-bottom: 0; }
+    .cache-stat-val { font-weight: 600; color: #e2e0eb; }
+    .cache-keys { margin-top: 0.5rem; }
+    .cache-key-chip {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      margin: 0.2rem 0.2rem 0 0;
+      background: rgba(124,58,237,0.15);
+      border: 1px solid rgba(124,58,237,0.3);
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #a78bfa;
+    }
     .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem; }
     .emotion-grid {
       display: grid;
@@ -425,12 +456,46 @@
         resultContent.innerHTML =
           '<audio controls autoplay src="' + url + '"></audio>' +
           '<a class="download-link" href="' + url + '" download="chatterbox_output.wav">Download WAV</a>';
+
+        await refreshCacheStats(resultContent);
       } catch (e) {
         resultContent.innerHTML = '<div class="error-box">Request failed: ' + e.message + "</div>";
       } finally {
         btn.disabled = false;
         btn.textContent = "Generate Speech";
       }
+    }
+
+    async function refreshCacheStats(container) {
+      try {
+        const hdrs = {};
+        const apiKey = document.getElementById("apiKey").value.trim();
+        if (apiKey) hdrs["Authorization"] = "Bearer " + apiKey;
+        const resp = await fetch("/cache-stats", { headers: hdrs });
+        if (!resp.ok) return;
+        const s = await resp.json();
+
+        const total = s.cache_hits + s.cache_misses;
+        const hitPct = total > 0 ? (s.hit_rate * 100).toFixed(1) + "%" : "—";
+
+        const keysHtml = s.cache_keys.length
+          ? s.cache_keys.map(k => '<span class="cache-key-chip">' + k + '</span>').join("")
+          : '<span style="color:#9490a8">empty</span>';
+
+        const statsHtml =
+          '<div class="cache-stats">' +
+            '<div class="cache-stats-title">Voice Conditioning Cache</div>' +
+            '<div class="cache-stat-row"><span>Size</span><span class="cache-stat-val">' + s.cache_size + ' / ' + s.cache_maxsize + '</span></div>' +
+            '<div class="cache-stat-row"><span>Hits</span><span class="cache-stat-val">' + s.cache_hits + '</span></div>' +
+            '<div class="cache-stat-row"><span>Misses</span><span class="cache-stat-val">' + s.cache_misses + '</span></div>' +
+            '<div class="cache-stat-row"><span>Hit rate</span><span class="cache-stat-val">' + hitPct + '</span></div>' +
+            '<div class="cache-keys">' + keysHtml + '</div>' +
+          '</div>';
+
+        const existing = container.querySelector(".cache-stats");
+        if (existing) existing.outerHTML = statsHtml;
+        else container.insertAdjacentHTML("beforeend", statsHtml);
+      } catch (_) {}
     }
 
     async function checkHealth() {
