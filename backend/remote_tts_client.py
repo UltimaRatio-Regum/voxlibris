@@ -13,10 +13,10 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_DETAILS = 15.0
+TIMEOUT_DETAILS = 5.0
 TIMEOUT_TTS = 120.0
-TIMEOUT_WAKE = 300.0
-WAKE_POLL_INTERVAL = 10.0
+TIMEOUT_WAKE = 600.0
+WAKE_POLL_INTERVAL = 5.0
 
 
 @dataclass
@@ -196,7 +196,7 @@ class RemoteTTSClient:
             attempt += 1
             remaining = max(deadline - time.monotonic(), 5.0)
             try:
-                async with httpx.AsyncClient(timeout=min(30.0, remaining)) as client:
+                async with httpx.AsyncClient(timeout=min(5.0, remaining)) as client:
                     if use_details_fallback:
                         resp = await client.post(
                             f"{self.base_url}/GetEngineDetails",

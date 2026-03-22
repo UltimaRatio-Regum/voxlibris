@@ -138,11 +138,6 @@ class AudioProcessor:
         except Exception:
             return 0.0
     
-    def load_audio(self, file_path: str) -> tuple[np.ndarray, int]:
-        """Load audio file and return (data, sample_rate)."""
-        data, sr = sf.read(file_path)
-        return data, sr
-    
     def save_audio(self, file_path: str, data: np.ndarray, sample_rate: int):
         """Save audio data to file."""
         sf.write(file_path, data, sample_rate)
@@ -338,11 +333,6 @@ class AudioProcessor:
         normalized = audio_data * (target_amplitude / peak)
         
         return normalized
-    
-    def create_silence(self, sample_rate: int, duration_ms: int) -> np.ndarray:
-        """Create silence of specified duration."""
-        num_samples = int(sample_rate * duration_ms / 1000)
-        return np.zeros(num_samples, dtype=np.float32)
     
     def trim_silence_edges(
         self,

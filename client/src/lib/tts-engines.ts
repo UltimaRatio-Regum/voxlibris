@@ -46,10 +46,3 @@ export function isVoiceCloningEngine(id: TTSEngine): boolean {
   return engine?.supportsVoiceCloning ?? false;
 }
 
-export function getVoiceCloningEngines(): TTSEngineConfig[] {
-  return TTS_ENGINES.filter(e => e.supportsVoiceCloning);
-}
-
-export function getLocalEngines(): TTSEngineConfig[] {
-  return TTS_ENGINES.filter(e => e.isLocal);
-}
