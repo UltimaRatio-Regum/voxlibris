@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { ChevronRight, ChevronDown, Book, FileText, Layers, Type, Loader2, CheckCircle2, AlertCircle, Settings2, Mic, Users, Music, BookOpen } from "lucide-react";
+import { ChevronRight, ChevronDown, Book, FileText, Layers, Type, Loader2, CheckCircle2, AlertCircle, Settings2, Mic, Users, Music, BookOpen, ShieldCheck, Flag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectData, ProjectChapter, ProjectSection, ProjectChunk } from "@shared/schema";
 
@@ -12,12 +12,27 @@ export type TreeNodeType =
   | "book-content"
   | "chapter"
   | "section"
-  | "chunk";
+  | "chunk"
+  | "validation"
+  | "validation-chunk";
+
+export interface ValidationFlaggedChunk {
+  chunkId: string;
+  chunkText: string;
+  combinedScore: number;
+}
+
+export interface ValidationTreeData {
+  flaggedChunks: ValidationFlaggedChunk[];
+  activeJobStatus: string | null;
+  totalValidated: number;
+  hasResults: boolean;
+}
 
 export interface TreeSelection {
   type: TreeNodeType;
   id: string;
-  data: ProjectData | ProjectChapter | ProjectSection | ProjectChunk;
+  data: ProjectData | ProjectChapter | ProjectSection | ProjectChunk | ValidationFlaggedChunk;
 }
 
 interface ProjectTreeProps {
@@ -26,6 +41,7 @@ interface ProjectTreeProps {
   selectedChunkIds: Set<string>;
   onSelect: (selection: TreeSelection) => void;
   onMultiSelect: (chunkIds: Set<string>, chunks: ProjectChunk[]) => void;
+  validationData?: ValidationTreeData;
 }
 
 function StatusIcon({ status }: { status: string }) {
@@ -81,7 +97,7 @@ function TreeNode({
   );
 }
 
-export function ProjectTree({ project, selection, selectedChunkIds, onSelect, onMultiSelect }: ProjectTreeProps) {
+export function ProjectTree({ project, selection, selectedChunkIds, onSelect, onMultiSelect, validationData }: ProjectTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(["project", "book-content"]));
   const lastClickedChunkRef = useRef<string | null>(null);
 
@@ -220,6 +236,44 @@ export function ProjectTree({ project, selection, selectedChunkIds, onSelect, on
             onClick={() => handleNonChunkClick({ type: "output-files", id: "output-files", data: project })}
             testId="tree-output-files"
           />
+
+          {/* Validation */}
+          {(() => {
+            const flaggedChunks = validationData?.flaggedChunks ?? [];
+            const isValidationExpanded = expandedNodes.has("validation");
+            const jobStatus = validationData?.activeJobStatus;
+            const validationStatus = jobStatus === "processing" || jobStatus === "pending" ? "generating"
+              : jobStatus === "completed" ? "completed"
+              : jobStatus === "failed" ? "failed"
+              : "";
+            const sublabel = validationData?.hasResults
+              ? flaggedChunks.length > 0 ? `${flaggedChunks.length} flagged` : "clean"
+              : undefined;
+            return (
+              <>
+                <TreeNode
+                  icon={ShieldCheck} label="Validation" sublabel={sublabel} status={validationStatus}
+                  isSelected={selectedChunkIds.size === 0 && selection?.type === "validation"}
+                  isExpanded={isValidationExpanded} hasChildren={flaggedChunks.length > 0} depth={1}
+                  onClick={() => handleNonChunkClick({ type: "validation", id: "validation", data: project })}
+                  onToggle={() => toggleNode("validation")} testId="tree-validation"
+                />
+                {isValidationExpanded && flaggedChunks.map((fc) => (
+                  <TreeNode
+                    key={fc.chunkId}
+                    icon={Flag}
+                    label={fc.chunkText.substring(0, 50) + (fc.chunkText.length > 50 ? "…" : "")}
+                    sublabel={`${(fc.combinedScore * 100).toFixed(0)}%`}
+                    status=""
+                    isSelected={selectedChunkIds.size === 0 && selection?.type === "validation-chunk" && selection.id === fc.chunkId}
+                    hasChildren={false} depth={2}
+                    onClick={() => handleNonChunkClick({ type: "validation-chunk", id: fc.chunkId, data: fc })}
+                    testId={`tree-validation-chunk-${fc.chunkId}`}
+                  />
+                ))}
+              </>
+            );
+          })()}
 
           {/* Book Content */}
           <TreeNode

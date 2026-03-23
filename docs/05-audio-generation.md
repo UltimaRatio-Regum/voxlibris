@@ -96,6 +96,7 @@ The section and chapter audio will be automatically re-rolled to include the new
 
 ## Next Steps
 
-- [Export](./export) — Export your finished audiobook in various formats
-- [Emotion & Prosody](./emotion-prosody) — Fine-tune emotional expression
-- [Project Editor](./project-editor) — Navigate and edit your project
+- [Audio Validation](./12-audio-validation) — Verify generated audio quality with STT-based similarity scoring
+- [Export](./06-export) — Export your finished audiobook in various formats
+- [Emotion & Prosody](./08-emotion-prosody) — Fine-tune emotional expression
+- [Project Editor](./03-project-editor) — Navigate and edit your project

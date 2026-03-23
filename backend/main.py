@@ -38,9 +38,11 @@ from database import (
     get_db_session, TTSEngineEndpoint, VoiceLibraryEntry, CustomVoice,
     Project, ProjectChapter, ProjectSection, ProjectChunk, ProjectAudioFile,
     AppSetting, TTSJob, TTSSegment, JobStatus,
+    ProjectValidationConfig, ChunkValidationResult,
+    ValidationHistory,
 )
 from remote_tts_client import RemoteTTSClient
-from project_segmenter import segment_project_background, split_into_sections, _call_llm_for_section, rechunk_section, get_chapter_chars_in_progress
+from project_segmenter import segment_project_background, split_into_sections, _call_llm_for_section, rechunk_section, get_chapter_chars_in_progress, apply_merge_short_chunks
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -145,6 +147,75 @@ audio_processor = AudioProcessor()
 tts_service = TTSService()
 
 voice_samples: dict[str, VoiceSample] = {}
+
+# ─────────────────────────────────────────────
+# OpenRouter audio-capable model cache
+# ─────────────────────────────────────────────
+
+_stt_models_cache: list[dict] | None = None
+_stt_models_error: str | None = None
+
+
+def _fetch_stt_models_background():
+    """Fetch OpenRouter models that accept audio input; runs once at startup in a daemon thread."""
+    import httpx as _httpx
+
+    global _stt_models_cache, _stt_models_error
+
+    openrouter_base = os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+    openrouter_key = os.environ.get("AI_INTEGRATIONS_OPENROUTER_API_KEY", "")
+
+    if not openrouter_key:
+        _stt_models_error = "OpenRouter API key not configured"
+        return
+
+    try:
+        resp = _httpx.get(
+            f"{openrouter_base}/models",
+            headers={"Authorization": f"Bearer {openrouter_key}"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        data = resp.json().get("data", [])
+
+        from validation_runner import _is_stt_model
+
+        models = []
+        for m in data:
+            arch = m.get("architecture", {})
+            input_mods = arch.get("input_modalities") or []
+            output_mods = arch.get("output_modalities") or []
+            if "audio" in input_mods and "text" in output_mods:
+                model_id = m.get("id", "")
+                models.append({
+                    "id": model_id,
+                    "name": m.get("name") or model_id,
+                    # Tells the UI which API path will be used
+                    "endpoint": "transcriptions" if _is_stt_model(model_id) else "chat",
+                })
+
+        # Sort by name for readability
+        models.sort(key=lambda x: x["name"].lower())
+        _stt_models_cache = models
+        logger.info(f"Loaded {len(models)} audio-capable OpenRouter models")
+    except Exception as exc:
+        _stt_models_error = str(exc)
+        logger.warning(f"Failed to fetch OpenRouter models: {exc}")
+
+
+@app.on_event("startup")
+async def _startup():
+    import threading
+    t = threading.Thread(target=_fetch_stt_models_background, daemon=True)
+    t.start()
+
+
+@app.get("/validation/stt-models")
+async def get_stt_models():
+    """Return the list of OpenRouter models that accept audio input."""
+    if _stt_models_cache is not None:
+        return {"models": _stt_models_cache, "ready": True}
+    return {"models": [], "ready": False, "error": _stt_models_error}
 
 
 def _get_user_info(request: FastAPIRequest) -> tuple[Optional[str], str]:
@@ -1404,6 +1475,474 @@ async def remove_voice_favorite(voice_id: str, request: FastAPIRequest):
             db.add(AppSetting(key=key, value=json.dumps(favorites)))
         db.commit()
         return {"voice_ids": favorites}
+    finally:
+        db.close()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Validation endpoints
+# ──────────────────────────────────────────────────────────────────────
+
+from validation_runner import (
+    run_validation_background, compute_scores, combine_scores, ALGORITHM_LABELS,
+)
+
+_VALIDATION_ALGORITHMS = list(ALGORITHM_LABELS.keys())
+
+
+def _default_validation_config() -> dict:
+    return {
+        "stt_model": "google/gemini-2.5-flash",
+        "algorithms": ["sequence_matcher", "levenshtein", "token_sort"],
+        "combination_method": "average",
+        "drop_worst_n": 0,
+        "similarity_cutoff": 0.80,
+        "auto_regenerate": False,
+        "use_phonetic": False,
+    }
+
+
+def _serialize_validation_config(cfg: "ProjectValidationConfig") -> dict:
+    return {
+        "sttModel": cfg.stt_model,
+        "algorithms": json.loads(cfg.algorithms) if isinstance(cfg.algorithms, str) else cfg.algorithms,
+        "combinationMethod": cfg.combination_method,
+        "dropWorstN": cfg.drop_worst_n,
+        "similarityCutoff": cfg.similarity_cutoff,
+        "autoRegenerate": cfg.auto_regenerate,
+        "usePhonetic": getattr(cfg, "use_phonetic", False),
+    }
+
+
+def _serialize_validation_result(r: "ChunkValidationResult") -> dict:
+    return {
+        "id": r.id,
+        "chunkId": r.chunk_id,
+        "jobId": r.job_id,
+        "sttText": r.stt_text,
+        "processedSourceText": getattr(r, "processed_source_text", None),
+        "processedSttText": getattr(r, "processed_stt_text", None),
+        "algorithmScores": json.loads(r.algorithm_scores) if r.algorithm_scores else {},
+        "combinedScore": r.combined_score,
+        "isFlagged": r.is_flagged,
+        "isRegenerated": r.is_regenerated,
+        "createdAt": r.created_at.isoformat() if r.created_at else None,
+        "updatedAt": r.updated_at.isoformat() if r.updated_at else None,
+    }
+
+
+@app.get("/projects/{project_id}/validation/config")
+async def get_validation_config(project_id: str, request: FastAPIRequest):
+    """Get validation configuration for a project."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        cfg = db.query(ProjectValidationConfig).filter(
+            ProjectValidationConfig.project_id == project_id
+        ).first()
+        if not cfg:
+            return {"config": _default_validation_config(), "algorithmLabels": ALGORITHM_LABELS}
+        return {"config": _serialize_validation_config(cfg), "algorithmLabels": ALGORITHM_LABELS}
+    finally:
+        db.close()
+
+
+@app.post("/projects/{project_id}/validation/config")
+async def save_validation_config(project_id: str, request: FastAPIRequest):
+    """Save validation configuration for a project."""
+    user_id, user_role = _get_user_info(request)
+    body = await request.json()
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        cfg = db.query(ProjectValidationConfig).filter(
+            ProjectValidationConfig.project_id == project_id
+        ).first()
+        if not cfg:
+            cfg = ProjectValidationConfig(project_id=project_id)
+            db.add(cfg)
+        if "sttModel" in body:
+            cfg.stt_model = body["sttModel"]
+        if "algorithms" in body:
+            cfg.algorithms = json.dumps(body["algorithms"])
+        if "combinationMethod" in body:
+            cfg.combination_method = body["combinationMethod"]
+        if "dropWorstN" in body:
+            cfg.drop_worst_n = int(body["dropWorstN"])
+        if "similarityCutoff" in body:
+            cfg.similarity_cutoff = float(body["similarityCutoff"])
+        if "autoRegenerate" in body:
+            cfg.auto_regenerate = bool(body["autoRegenerate"])
+        if "usePhonetic" in body:
+            cfg.use_phonetic = bool(body["usePhonetic"])
+        db.commit()
+        return {"config": _serialize_validation_config(cfg)}
+    finally:
+        db.close()
+
+
+@app.post("/projects/{project_id}/validation/start")
+async def start_validation_job(project_id: str, request: FastAPIRequest):
+    """Start a validation job for a project."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        cfg = db.query(ProjectValidationConfig).filter(
+            ProjectValidationConfig.project_id == project_id
+        ).first()
+        config = _serialize_validation_config(cfg) if cfg else _default_validation_config()
+        # Remap camelCase keys to snake_case for runner
+        runner_config = {
+            "stt_model": config.get("sttModel", config.get("stt_model", "google/gemini-2.5-flash")),
+            "algorithms": config.get("algorithms", ["sequence_matcher", "levenshtein", "token_sort"]),
+            "combination_method": config.get("combinationMethod", config.get("combination_method", "average")),
+            "drop_worst_n": config.get("dropWorstN", config.get("drop_worst_n", 0)),
+            "similarity_cutoff": config.get("similarityCutoff", config.get("similarity_cutoff", 0.80)),
+            "auto_regenerate": config.get("autoRegenerate", config.get("auto_regenerate", False)),
+            "use_phonetic": config.get("usePhonetic", config.get("use_phonetic", False)),
+        }
+
+        # Count chunks with audio as estimate
+        from database import ProjectAudioFile as PAF
+        total = db.query(PAF).filter(
+            PAF.project_id == project_id,
+            PAF.scope_type == "chunk",
+        ).count()
+
+        job_id = str(uuid.uuid4())
+        job = TTSJob(
+            id=job_id,
+            title=f"Validation — {project.title}",
+            status=JobStatus.PENDING.value,
+            total_segments=total,
+            completed_segments=0,
+            failed_segments=0,
+            tts_engine="validation",
+            job_type="validation",
+            project_id=project_id,
+            user_id=user_id,
+        )
+        db.add(job)
+        db.commit()
+    finally:
+        db.close()
+
+    run_validation_background(project_id, job_id, runner_config)
+    return {"jobId": job_id}
+
+
+@app.get("/projects/{project_id}/validation/results")
+async def get_validation_results(project_id: str, request: FastAPIRequest):
+    """Get all validation results for a project."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        results = (
+            db.query(ChunkValidationResult)
+            .filter(ChunkValidationResult.project_id == project_id)
+            .all()
+        )
+
+        # Find latest validation job for status
+        latest_job = (
+            db.query(TTSJob)
+            .filter(TTSJob.project_id == project_id, TTSJob.job_type == "validation")
+            .order_by(TTSJob.created_at.desc())
+            .first()
+        )
+
+        # Build chunk text lookup
+        from database import ProjectChunk as PC, ProjectSection as PS, ProjectChapter as PCh
+        chunks = (
+            db.query(PC)
+            .join(PS, PC.section_id == PS.id)
+            .join(PCh, PS.chapter_id == PCh.id)
+            .filter(PCh.project_id == project_id)
+            .all()
+        )
+        chunk_text = {c.id: c.text for c in chunks}
+
+        serialized = []
+        for r in results:
+            d = _serialize_validation_result(r)
+            d["chunkText"] = chunk_text.get(r.chunk_id, "")
+            serialized.append(d)
+
+        return {
+            "results": serialized,
+            "jobStatus": latest_job.status if latest_job else None,
+            "jobId": latest_job.id if latest_job else None,
+            "jobProgress": (
+                latest_job.completed_segments / latest_job.total_segments
+                if latest_job and latest_job.total_segments > 0 else 0
+            ),
+        }
+    finally:
+        db.close()
+
+
+@app.post("/projects/{project_id}/validation/apply")
+async def apply_validation_settings(project_id: str, request: FastAPIRequest):
+    """Re-apply flagging using new config against stored scores (no re-running STT)."""
+    user_id, user_role = _get_user_info(request)
+    body = await request.json()
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        combination_method = body.get("combinationMethod", "average")
+        drop_worst_n = int(body.get("dropWorstN", 0))
+        cutoff = float(body.get("similarityCutoff", 0.80))
+        algorithms = body.get("algorithms", None)  # optional — if provided, recompute scores
+
+        results = (
+            db.query(ChunkValidationResult)
+            .filter(ChunkValidationResult.project_id == project_id)
+            .all()
+        )
+
+        updated = 0
+        for r in results:
+            scores = json.loads(r.algorithm_scores) if r.algorithm_scores else {}
+            if algorithms:
+                # filter to only selected algorithms
+                scores = {k: v for k, v in scores.items() if k in algorithms}
+            combined = combine_scores(scores, combination_method, drop_worst_n)
+            r.combined_score = combined
+            r.is_flagged = combined < cutoff
+            updated += 1
+
+        # Save the new config too
+        cfg = db.query(ProjectValidationConfig).filter(
+            ProjectValidationConfig.project_id == project_id
+        ).first()
+        if cfg:
+            cfg.combination_method = combination_method
+            cfg.drop_worst_n = drop_worst_n
+            cfg.similarity_cutoff = cutoff
+            if algorithms:
+                cfg.algorithms = json.dumps(algorithms)
+
+        db.commit()
+        return {"updated": updated}
+    finally:
+        db.close()
+
+
+@app.post("/projects/{project_id}/validation/regenerate")
+async def regenerate_flagged_chunks(project_id: str, request: FastAPIRequest):
+    """Submit all flagged, non-regenerated chunks for TTS re-generation."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        flagged = (
+            db.query(ChunkValidationResult)
+            .filter(
+                ChunkValidationResult.project_id == project_id,
+                ChunkValidationResult.is_flagged == True,
+                ChunkValidationResult.is_regenerated == False,
+            )
+            .all()
+        )
+        chunk_ids = [r.chunk_id for r in flagged]
+        if not chunk_ids:
+            return {"message": "No flagged chunks to regenerate", "count": 0}
+    finally:
+        db.close()
+
+    # Import generate logic and run for each chunk
+    from job_runner import start_job_async
+    from job_manager import create_job
+    from database import ProjectChunk as PC, ProjectSection as PS, ProjectChapter as PCh
+
+    db = get_db_session()
+    try:
+        project_obj = db.query(Project).filter(Project.id == project_id).first()
+        chunks = db.query(PC).filter(PC.id.in_(chunk_ids)).all()
+        tts_engine = project_obj.tts_engine if project_obj else "edge-tts"
+        narrator_voice = project_obj.narrator_voice_id if project_obj else None
+        engine_options = json.loads(project_obj.engine_options_json) if project_obj and project_obj.engine_options_json else {}
+    finally:
+        db.close()
+
+    job_ids = []
+    for chunk in chunks:
+        segment = {
+            "chunkId": chunk.id,
+            "text": chunk.text,
+            "type": chunk.segment_type,
+            "speaker": chunk.speaker,
+            "speakerOverride": chunk.speaker_override,
+            "emotionOverride": chunk.emotion_override,
+            "emotion": chunk.emotion_override or chunk.emotion,
+            "sentiment": {"label": chunk.emotion_override or chunk.emotion},
+        }
+        job_id = create_job(
+            title=f"Regenerate chunk",
+            segments=[segment],
+            config={
+                "ttsEngine": tts_engine,
+                "narratorVoiceId": narrator_voice,
+                "projectId": project_id,
+                "engineOptions": engine_options,
+            },
+            user_id=user_id,
+        )
+        start_job_async(job_id)
+        job_ids.append(job_id)
+
+    # Mark as regenerated in both current results and permanent history
+    db = get_db_session()
+    try:
+        db.query(ChunkValidationResult).filter(
+            ChunkValidationResult.project_id == project_id,
+            ChunkValidationResult.chunk_id.in_(chunk_ids),
+        ).update({"is_regenerated": True}, synchronize_session=False)
+
+        # Find the job_id used by these results so we update the right history rows
+        sample = (
+            db.query(ChunkValidationResult)
+            .filter(
+                ChunkValidationResult.project_id == project_id,
+                ChunkValidationResult.chunk_id.in_(chunk_ids),
+            )
+            .first()
+        )
+        if sample and sample.job_id:
+            db.query(ValidationHistory).filter(
+                ValidationHistory.project_id == project_id,
+                ValidationHistory.chunk_id.in_(chunk_ids),
+                ValidationHistory.validation_job_id == sample.job_id,
+            ).update(
+                {"is_regenerated": True, "regen_type": "batch"},
+                synchronize_session=False,
+            )
+
+        db.commit()
+    finally:
+        db.close()
+
+    return {"count": len(job_ids), "jobIds": job_ids}
+
+
+@app.patch("/projects/{project_id}/validation/chunks/{chunk_id}")
+async def patch_validation_chunk(project_id: str, chunk_id: str, request: FastAPIRequest):
+    """Mark a validation result as good (unflagged) or as regenerated."""
+    user_id, user_role = _get_user_info(request)
+    body = await request.json()
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        result = db.query(ChunkValidationResult).filter(
+            ChunkValidationResult.project_id == project_id,
+            ChunkValidationResult.chunk_id == chunk_id,
+        ).first()
+        if not result:
+            raise HTTPException(status_code=404, detail="Validation result not found")
+
+        mark_good = False
+        mark_regen = False
+        if "isFlagged" in body:
+            result.is_flagged = bool(body["isFlagged"])
+            if not result.is_flagged:
+                mark_good = True
+        if "isRegenerated" in body:
+            result.is_regenerated = bool(body["isRegenerated"])
+            if result.is_regenerated:
+                mark_regen = True
+
+        # Mirror outcome onto the permanent history row from the same job
+        if mark_good or mark_regen:
+            history_row = (
+                db.query(ValidationHistory)
+                .filter(
+                    ValidationHistory.chunk_id == chunk_id,
+                    ValidationHistory.validation_job_id == result.job_id,
+                )
+                .first()
+            )
+            if history_row:
+                if mark_good:
+                    history_row.is_good = True
+                if mark_regen:
+                    history_row.is_regenerated = True
+                    history_row.regen_type = "manual"
+
+        db.commit()
+        return _serialize_validation_result(result)
+    finally:
+        db.close()
+
+
+@app.get("/projects/{project_id}/chunks/{chunk_id}/audio")
+async def get_chunk_audio(project_id: str, chunk_id: str, request: FastAPIRequest):
+    """Return the latest generated audio for a specific chunk (streams the raw bytes)."""
+    user_id, user_role = _get_user_info(request)
+    db = get_db_session()
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if user_role != "administrator" and project.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        af = (
+            db.query(ProjectAudioFile)
+            .filter(
+                ProjectAudioFile.project_id == project_id,
+                ProjectAudioFile.scope_type == "chunk",
+                ProjectAudioFile.scope_id == chunk_id,
+            )
+            .order_by(ProjectAudioFile.created_at.desc())
+            .first()
+        )
+        if not af:
+            raise HTTPException(status_code=404, detail="No audio for this chunk")
+        data: Optional[bytes] = None
+        if af.audio_data:
+            data = af.audio_data
+        elif af.file_path and os.path.exists(af.file_path):
+            with open(af.file_path, "rb") as fh:
+                data = fh.read()
+        if not data:
+            raise HTTPException(status_code=404, detail="Audio data missing")
+        mime = "audio/mpeg" if af.format == "mp3" else "audio/wav"
+        return Response(content=data, media_type=mime)
     finally:
         db.close()
 
@@ -3661,6 +4200,7 @@ async def merge_speakers(project_id: str, request: MergeSpeakersRequest, req: Fa
 
 class SegmentProjectRequest(BaseModel):
     model: str = "openai/gpt-4.1-mini"
+    merge_short_chunks: bool = True
 
 @app.post("/projects/{project_id}/segment")
 async def segment_project(project_id: str, req: FastAPIRequest, request: Optional[SegmentProjectRequest] = None):
@@ -3698,8 +4238,25 @@ async def segment_project(project_id: str, req: FastAPIRequest, request: Optiona
     finally:
         db.close()
 
-    segment_project_background(project_id, model=model)
+    merge = request.merge_short_chunks if request else True
+    segment_project_background(project_id, model=model, merge_short_chunks=merge)
     return {"success": True, "message": "Segmentation started"}
+
+
+@app.post("/projects/{project_id}/merge-short-chunks")
+async def merge_project_short_chunks(project_id: str, req: FastAPIRequest):
+    """Apply merge-short-chunks post-processing to all segmented sections of an existing project."""
+    user_id, user_role = _get_user_info(req)
+    db = get_db_session()
+    try:
+        project = _require_project_access(db, user_id, user_role, project_id)
+        if project.status not in ("segmented", "completed", "failed"):
+            raise HTTPException(status_code=400, detail="Project must be segmented before merging chunks")
+    finally:
+        db.close()
+
+    eliminated = apply_merge_short_chunks(project_id)
+    return {"success": True, "eliminated": eliminated}
 
 
 class RechunkSectionRequest(BaseModel):

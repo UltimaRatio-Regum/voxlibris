@@ -356,6 +356,87 @@ class ProjectAudioFile(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class ProjectValidationConfig(Base):
+    """Per-project configuration for the audio validation pipeline."""
+    __tablename__ = "project_validation_configs"
+
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    stt_model = Column(String, nullable=False, default="google/gemini-2.5-flash")
+    algorithms = Column(Text, nullable=False, default='["sequence_matcher","levenshtein","token_sort"]')
+    combination_method = Column(String, nullable=False, default="average")  # average | max | min
+    drop_worst_n = Column(Integer, nullable=False, default=0)
+    similarity_cutoff = Column(Float, nullable=False, default=0.80)
+    auto_regenerate = Column(Boolean, nullable=False, default=False)
+    use_phonetic = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ChunkValidationResult(Base):
+    """STT result and similarity scores for a single chunk in a validation run."""
+    __tablename__ = "chunk_validation_results"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    chunk_id = Column(String, ForeignKey("project_chunks.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_id = Column(String, ForeignKey("tts_jobs.id", ondelete="SET NULL"), nullable=True)
+    stt_text = Column(Text, nullable=True)
+    processed_source_text = Column(Text, nullable=True)  # normalized/phonetic text used for comparison
+    processed_stt_text = Column(Text, nullable=True)     # normalized/phonetic text used for comparison
+    algorithm_scores = Column(Text, nullable=True)  # JSON: {"sequence_matcher": 0.91, ...}
+    combined_score = Column(Float, nullable=True)
+    is_flagged = Column(Boolean, nullable=False, default=False)
+    is_regenerated = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ValidationHistory(Base):
+    """Permanent log of every per-chunk validation result across all runs.
+    Intended as a training dataset for future ML-based quality prediction."""
+    __tablename__ = "validation_history"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    chunk_id = Column(String, ForeignKey("project_chunks.id", ondelete="CASCADE"), nullable=False, index=True)
+    validation_job_id = Column(String, ForeignKey("tts_jobs.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Raw texts
+    source_text = Column(Text, nullable=True)
+    stt_text = Column(Text, nullable=True)
+    # Derived length features (useful regression inputs)
+    source_char_length = Column(Integer, nullable=True)
+    stt_char_length = Column(Integer, nullable=True)
+    source_word_count = Column(Integer, nullable=True)
+    stt_word_count = Column(Integer, nullable=True)
+    # Validation config used for this run
+    use_phonetic = Column(Boolean, nullable=False, default=False)
+    combined_score = Column(Float, nullable=True)
+    combination_method = Column(String, nullable=True)
+    drop_worst_n = Column(Integer, nullable=True)
+    similarity_cutoff = Column(Float, nullable=True)
+    # Outcome labels
+    is_flagged = Column(Boolean, nullable=False, default=False)
+    is_good = Column(Boolean, nullable=False, default=False)       # manually marked as good
+    is_regenerated = Column(Boolean, nullable=False, default=False)
+    regen_type = Column(String, nullable=True)                     # null | "manual" | "batch" | "auto"
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    scores = relationship("ValidationAlgorithmScore", back_populates="history", cascade="all, delete-orphan")
+
+
+class ValidationAlgorithmScore(Base):
+    """Raw per-algorithm similarity score for a single chunk in a validation run."""
+    __tablename__ = "validation_algorithm_scores"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    history_id = Column(String, ForeignKey("validation_history.id", ondelete="CASCADE"), nullable=False, index=True)
+    algorithm = Column(String, nullable=False)
+    score = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    history = relationship("ValidationHistory", back_populates="scores")
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
@@ -403,6 +484,9 @@ def _migrate_columns(db_engine):
         ("custom_voices", "transcript", "ALTER TABLE custom_voices ADD COLUMN transcript TEXT"),
         ("custom_voices", "metadata_json", "ALTER TABLE custom_voices ADD COLUMN metadata_json TEXT"),
         ("voice_library", "audio_hash", "ALTER TABLE voice_library ADD COLUMN audio_hash VARCHAR(64)"),
+        ("project_validation_configs", "use_phonetic", "ALTER TABLE project_validation_configs ADD COLUMN use_phonetic BOOLEAN NOT NULL DEFAULT false"),
+        ("chunk_validation_results", "processed_source_text", "ALTER TABLE chunk_validation_results ADD COLUMN processed_source_text TEXT"),
+        ("chunk_validation_results", "processed_stt_text", "ALTER TABLE chunk_validation_results ADD COLUMN processed_stt_text TEXT"),
     ]
     
     with db_engine.connect() as conn:

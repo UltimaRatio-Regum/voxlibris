@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ProjectTree, type TreeSelection } from "@/components/ProjectTree";
+import { ProjectTree, type TreeSelection, type ValidationTreeData } from "@/components/ProjectTree";
 import { ProjectDetailPanel } from "@/components/ProjectDetailPanel";
 import { BulkOverridePanel } from "@/components/BulkOverridePanel";
 import { BackupProjectDialog } from "@/components/BackupProjectDialog";
@@ -46,6 +46,28 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
       return false;
     },
   });
+
+  const { data: validationResultsData } = useQuery<{
+    results: Array<{ chunkId: string; chunkText: string; combinedScore: number; isFlagged: boolean; isRegenerated: boolean }>;
+    jobStatus: string | null;
+    jobId: string | null;
+    jobProgress: number;
+  }>({
+    queryKey: ["/api/projects", projectId, "validation/results"],
+    refetchInterval: (query) => {
+      const status = query.state.data?.jobStatus;
+      return status === "processing" || status === "pending" ? 3000 : false;
+    },
+  });
+
+  const validationData: ValidationTreeData = {
+    flaggedChunks: (validationResultsData?.results ?? [])
+      .filter((r) => r.isFlagged && !r.isRegenerated)
+      .map((r) => ({ chunkId: r.chunkId, chunkText: r.chunkText, combinedScore: r.combinedScore })),
+    activeJobStatus: validationResultsData?.jobStatus ?? null,
+    totalValidated: validationResultsData?.results.length ?? 0,
+    hasResults: (validationResultsData?.results.length ?? 0) > 0,
+  };
 
   useEffect(() => {
     if (project && !selection) {
@@ -194,6 +216,7 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
                 selectedChunkIds={selectedChunkIds}
                 onSelect={setSelection}
                 onMultiSelect={handleMultiSelect}
+                validationData={validationData}
               />
             </div>
           </ScrollArea>

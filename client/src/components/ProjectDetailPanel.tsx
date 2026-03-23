@@ -54,6 +54,9 @@ interface ProjectDetailPanelProps {
 }
 
 const SETTINGS_TYPES = new Set(["project", "engine-settings", "voice-settings", "characters", "output-files"]);
+// Lazy imports for validation panels
+import { ValidationPanel } from "@/components/ValidationPanel";
+import { ValidationChunkPanel } from "@/components/ValidationChunkPanel";
 
 export function ProjectDetailPanel({ selection, project, onRefresh, settingsPanelRef }: ProjectDetailPanelProps) {
   const { toast } = useToast();
@@ -200,6 +203,14 @@ export function ProjectDetailPanel({ selection, project, onRefresh, settingsPane
 
       {selection.type === "book-content" && (
         <BookContentInfoPanel project={project} />
+      )}
+
+      {selection.type === "validation" && (
+        <ValidationPanel project={project} onRefresh={onRefresh} />
+      )}
+
+      {selection.type === "validation-chunk" && (
+        <ValidationChunkPanel chunkId={selection.id} project={project} onRefresh={onRefresh} />
       )}
 
       {selection.type === "chapter" && (
@@ -383,6 +394,8 @@ const ProjectSettingsPanel = forwardRef<
   const [isExporting, setIsExporting] = useState(false);
   const [inspectedSpeaker, setInspectedSpeaker] = useState<string | null>(null);
   const [resegmentModel, setResegmentModelRaw] = useState(DEFAULT_MODEL.id);
+  const [resegmentMerge, setResegmentMerge] = useState(true);
+  const [isMergingChunks, setIsMergingChunks] = useState(false);
 
   // Dirty-tracking wrappers
   const mark = () => setIsDirty(true);
@@ -900,11 +913,12 @@ const ProjectSettingsPanel = forwardRef<
                   const res = await fetch(`/api/projects/${project.id}/segment`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ model: resegmentModel }),
+                    body: JSON.stringify({ model: resegmentModel, merge_short_chunks: resegmentMerge }),
                     credentials: "include",
                   });
                   if (!res.ok) throw new Error(await res.text());
                   toast({ title: "Re-segmentation started", description: "Running in the background." });
+                  queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id] });
                   onRefresh();
                 } catch (err: any) {
                   toast({ title: "Re-segmentation failed", description: err.message, variant: "destructive" });
@@ -917,6 +931,54 @@ const ProjectSettingsPanel = forwardRef<
               {project.status === "segmenting" ? "Segmenting..." : "Re-segment"}
             </Button>
           </div>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox
+              checked={resegmentMerge}
+              onCheckedChange={(v) => setResegmentMerge(!!v)}
+            />
+            Merge short / punctuation-only chunks after segmentation
+          </label>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold">Merge Short Chunks</h3>
+          <p className="text-xs text-muted-foreground">
+            Run the chunk-merging pass on the current segmentation without re-analyzing. Joins punctuation-only and short (≤3 word) chunks with same-speaker neighbours.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isMergingChunks || project.status === "segmenting"}
+            onClick={async () => {
+              setIsMergingChunks(true);
+              try {
+                const res = await fetch(`/api/projects/${project.id}/merge-short-chunks`, {
+                  method: "POST",
+                  credentials: "include",
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                toast({
+                  title: "Merge complete",
+                  description: data.eliminated > 0
+                    ? `Merged away ${data.eliminated} chunk(s).`
+                    : "No chunks needed merging.",
+                });
+                queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id] });
+                onRefresh();
+              } catch (err: any) {
+                toast({ title: "Merge failed", description: err.message, variant: "destructive" });
+              } finally {
+                setIsMergingChunks(false);
+              }
+            }}
+          >
+            {isMergingChunks
+              ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Merging…</>
+              : <><Merge className="h-3.5 w-3.5 mr-1" />Merge Short Chunks</>}
+          </Button>
         </div>
       </div>
     );

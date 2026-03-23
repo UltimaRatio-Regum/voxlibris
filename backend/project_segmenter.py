@@ -500,6 +500,100 @@ def _generate_section_titles(db, chapter_id: str, model: str = "openai/gpt-4.1-m
         logger.warning(f"Failed to generate section titles: {e}")
 
 
+def _build_flat_segments(result_segments: list[dict]) -> list[dict]:
+    """Expand LLM segments through rechunking into a flat list of chunk dicts."""
+    flat = []
+    for seg in result_segments:
+        seg_text = seg.get("text", "")
+        seg_type = seg.get("type", "narration")
+        seg_speaker = seg.get("speaker")
+        emotion = seg.get("emotion", seg.get("sentiment", "neutral"))
+        if emotion not in CANONICAL_EMOTIONS:
+            emotion = "neutral"
+        for st in _rechunk_segment(seg_text):
+            flat.append({
+                "type": seg_type,
+                "text": st.strip(),
+                "speaker": seg_speaker,
+                "emotion": emotion,
+            })
+    return flat
+
+
+def _merge_short_chunks(segments: list[dict]) -> list[dict]:
+    """
+    Post-process a flat segment list in three passes, then strip stragglers.
+
+    Each pass (×3):
+      For every chunk that is punctuation-only OR has ≤3 words, attempt to
+      merge it with the nearest same-speaker neighbour (prev preferred over next).
+      Chunks with no same-speaker neighbour are left in place for the next pass.
+
+    Three explicit passes let runs of short chunks (e.g. three 1-word chunks)
+    cascade fully: pass 1 folds chunk 1 into chunk 2, pass 2 folds the
+    2-word result into chunk 3, pass 3 confirms stability.
+
+    After the three passes, any remaining punctuation-only chunks that could
+    not be merged are deleted outright.
+    """
+    if not segments:
+        return segments
+
+    def _is_punct_only(text: str) -> bool:
+        return bool(text.strip()) and not re.search(r"[a-zA-Z0-9]", text)
+
+    def _join(a: str, b: str) -> str:
+        """Join two texts; skip the space when b opens with punctuation."""
+        a = a.rstrip()
+        b = b.strip()
+        if b and b[0] in ".,!?;:)]\'\"-":
+            return a + b
+        return a + " " + b
+
+    segs = [dict(s) for s in segments]
+
+    for _ in range(3):
+        out: list[dict] = []
+        i = 0
+
+        while i < len(segs):
+            seg = segs[i]
+            text = seg.get("text", "").strip()
+            punct_only = _is_punct_only(text)
+            short = not punct_only and len(text.split()) <= 3
+
+            if not punct_only and not short:
+                out.append(seg)
+                i += 1
+                continue
+
+            prev = out[-1] if out else None
+            nxt = segs[i + 1] if i + 1 < len(segs) else None
+
+            my_speaker = seg.get("speaker")
+            prev_same = prev is not None and prev.get("speaker") == my_speaker
+            nxt_same = nxt is not None and nxt.get("speaker") == my_speaker
+
+            if prev_same:
+                prev["text"] = _join(prev["text"], text)
+            elif nxt_same:
+                merged = dict(nxt)
+                merged["text"] = _join(text, nxt["text"])
+                segs[i + 1] = merged
+            else:
+                # No same-speaker neighbour this pass — leave for next pass
+                out.append(seg)
+
+            i += 1
+
+        segs = out
+
+    # Delete any punctuation-only chunks that survived all three passes
+    segs = [s for s in segs if not _is_punct_only(s.get("text", "").strip())]
+
+    return segs
+
+
 async def rechunk_section(project_id: str, section_id: str, model: str = DEFAULT_MODEL):
     """Re-chunk a single section using the same context the LLM had during original segmentation."""
     base_url = os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
@@ -564,35 +658,26 @@ async def rechunk_section(project_id: str, section_id: str, model: str = DEFAULT
                     )
 
                     new_chunks = []
-                    chunk_idx = 0
                     new_speakers = []
                     for speaker in result.get("detectedSpeakers", []):
                         if speaker and speaker not in known_speakers:
                             new_speakers.append(speaker)
 
-                    for seg in result.get("segments", []):
-                        seg_text = seg.get("text", "")
-                        seg_type = seg.get("type", "narration")
-                        seg_speaker = seg.get("speaker")
-                        emotion = seg.get("emotion", seg.get("sentiment", "neutral"))
-                        if emotion not in CANONICAL_EMOTIONS:
-                            emotion = "neutral"
-
-                        sub_texts = _rechunk_segment(seg_text)
-                        for st in sub_texts:
-                            wc = len(st.split())
-                            new_chunks.append(ProjectChunk(
-                                id=str(uuid.uuid4()),
-                                section_id=section.id,
-                                chunk_index=chunk_idx,
-                                text=st,
-                                segment_type=seg_type,
-                                speaker=seg_speaker,
-                                emotion=emotion,
-                                word_count=wc,
-                                approx_duration_seconds=round(wc / WORDS_PER_SECOND, 1),
-                            ))
-                            chunk_idx += 1
+                    flat = _merge_short_chunks(_build_flat_segments(result.get("segments", [])))
+                    for chunk_idx, seg in enumerate(flat):
+                        wc = len(seg["text"].split())
+                        new_chunks.append(ProjectChunk(
+                            id=str(uuid.uuid4()),
+                            section_id=section.id,
+                            chunk_index=chunk_idx,
+                            text=seg["text"],
+                            segment_type=seg["type"],
+                            speaker=seg["speaker"],
+                            emotion=seg["emotion"],
+                            word_count=wc,
+                            approx_duration_seconds=round(wc / WORDS_PER_SECOND, 1),
+                        ))
+                    chunk_idx = len(flat)
 
                     db.query(ProjectChunk).filter(ProjectChunk.section_id == section.id).delete()
                     for chunk in new_chunks:
@@ -626,21 +711,92 @@ async def rechunk_section(project_id: str, section_id: str, model: str = DEFAULT
         db.close()
 
 
-def segment_project_background(project_id: str, model: str = DEFAULT_MODEL):
+def apply_merge_short_chunks(project_id: str) -> int:
+    """
+    Run _merge_short_chunks post-processing on all already-segmented sections of a project.
+    Returns the number of chunks eliminated by merging.
+    """
+    db = get_db_session()
+    try:
+        chapters = db.query(ProjectChapter).filter(
+            ProjectChapter.project_id == project_id
+        ).order_by(ProjectChapter.chapter_index).all()
+
+        eliminated = 0
+        for chapter in chapters:
+            sections = (
+                db.query(ProjectSection)
+                .filter(
+                    ProjectSection.chapter_id == chapter.id,
+                    ProjectSection.status == "segmented",
+                )
+                .order_by(ProjectSection.section_index)
+                .all()
+            )
+            for section in sections:
+                chunks = (
+                    db.query(ProjectChunk)
+                    .filter(ProjectChunk.section_id == section.id)
+                    .order_by(ProjectChunk.chunk_index)
+                    .all()
+                )
+                if not chunks:
+                    continue
+
+                seg_dicts = [
+                    {
+                        "type": c.segment_type,
+                        "text": c.text,
+                        "speaker": c.speaker,
+                        "emotion": c.emotion,
+                    }
+                    for c in chunks
+                ]
+                merged = _merge_short_chunks(seg_dicts)
+                if len(merged) == len(chunks):
+                    continue  # nothing changed
+
+                eliminated += len(chunks) - len(merged)
+                db.query(ProjectChunk).filter(ProjectChunk.section_id == section.id).delete()
+                if not merged:
+                    # All chunks were deleted — remove the empty section too
+                    db.delete(section)
+                else:
+                    for idx, seg in enumerate(merged):
+                        wc = len(seg["text"].split())
+                        db.add(ProjectChunk(
+                            id=str(uuid.uuid4()),
+                            section_id=section.id,
+                            chunk_index=idx,
+                            text=seg["text"],
+                            segment_type=seg["type"],
+                            speaker=seg["speaker"],
+                            emotion=seg["emotion"],
+                            word_count=wc,
+                            approx_duration_seconds=round(wc / WORDS_PER_SECOND, 1),
+                        ))
+                db.commit()
+
+        return eliminated
+    finally:
+        db.close()
+
+
+def segment_project_background(project_id: str, model: str = DEFAULT_MODEL, merge_short_chunks: bool = True):
     thread = threading.Thread(
         target=_run_segmentation_wrapper,
-        args=(project_id, model),
+        args=(project_id, model, merge_short_chunks),
         daemon=True
     )
     thread.start()
     return thread
 
 
-def _run_segmentation_wrapper(project_id: str, model: str):
-    asyncio.run(_run_segmentation(project_id, model))
+def _run_segmentation_wrapper(project_id: str, model: str, merge_short_chunks: bool = True):
+    asyncio.run(_run_segmentation(project_id, model, merge_short_chunks))
 
 
-async def _run_segmentation(project_id: str, model: str):
+async def _run_segmentation(project_id: str, model: str, merge_short_chunks: bool = True):
     base_url = os.environ.get("AI_INTEGRATIONS_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     api_key = os.environ.get("AI_INTEGRATIONS_OPENROUTER_API_KEY", "")
 
@@ -701,7 +857,6 @@ async def _run_segmentation(project_id: str, model: str):
                         last_error = None
 
                         for attempt in range(1, max_attempts + 1):
-                            chunk_section_index = 0
                             try:
                                 result = await _call_llm_for_section(
                                     client, section_text, all_known_speakers,
@@ -712,34 +867,26 @@ async def _run_segmentation(project_id: str, model: str):
                                     if speaker and speaker not in all_known_speakers:
                                         all_known_speakers.append(speaker)
 
-                                for seg in result.get("segments", []):
-                                    seg_text = seg.get("text", "")
-                                    seg_type = seg.get("type", "narration")
-                                    seg_speaker = seg.get("speaker")
-                                    emotion = seg.get("emotion", seg.get("sentiment", "neutral"))
-                                    if emotion not in CANONICAL_EMOTIONS:
-                                        emotion = "neutral"
-
-                                    sub_texts = _rechunk_segment(seg_text)
-
-                                    for st in sub_texts:
-                                        wc = len(st.split())
-                                        chunk = ProjectChunk(
-                                            id=str(uuid.uuid4()),
-                                            section_id=section.id,
-                                            chunk_index=chunk_section_index,
-                                            text=st,
-                                            segment_type=seg_type,
-                                            speaker=seg_speaker,
-                                            emotion=emotion,
-                                            word_count=wc,
-                                            approx_duration_seconds=round(wc / WORDS_PER_SECOND, 1),
-                                        )
-                                        db.add(chunk)
-                                        chunk_section_index += 1
-                                        _chapter_chars_in_progress[project_id] = (
-                                            _chapter_chars_in_progress.get(project_id, 0) + len(st)
-                                        )
+                                flat = _build_flat_segments(result.get("segments", []))
+                                if merge_short_chunks:
+                                    flat = _merge_short_chunks(flat)
+                                for chunk_section_index, seg in enumerate(flat):
+                                    wc = len(seg["text"].split())
+                                    chunk = ProjectChunk(
+                                        id=str(uuid.uuid4()),
+                                        section_id=section.id,
+                                        chunk_index=chunk_section_index,
+                                        text=seg["text"],
+                                        segment_type=seg["type"],
+                                        speaker=seg["speaker"],
+                                        emotion=seg["emotion"],
+                                        word_count=wc,
+                                        approx_duration_seconds=round(wc / WORDS_PER_SECOND, 1),
+                                    )
+                                    db.add(chunk)
+                                    _chapter_chars_in_progress[project_id] = (
+                                        _chapter_chars_in_progress.get(project_id, 0) + len(seg["text"])
+                                    )
 
                                 context = section_text[-500:] if len(section_text) > 500 else section_text
 

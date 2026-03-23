@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Upload, FileText, X, ChevronDown } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +39,7 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
   const [inputMode, setInputMode] = useState<"text" | "epub">("text");
   const [epubFile, setEpubFile] = useState<File | null>(null);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL.id);
+  const [mergeShortChunks, setMergeShortChunks] = useState(true);
   const [titleError, setTitleError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,7 +74,7 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
         const segRes = await fetch(`/api/projects/${project.id}/segment`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: selectedModel }),
+          body: JSON.stringify({ model: selectedModel, merge_short_chunks: mergeShortChunks }),
           credentials: "include",
         });
         if (!segRes.ok) {
@@ -89,6 +91,7 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
       setText("");
       setEpubFile(null);
       setSelectedModel(DEFAULT_MODEL.id);
+      setMergeShortChunks(true);
       setTitleError(null);
       onProjectCreated(project);
     },
@@ -234,6 +237,14 @@ export function CreateProjectDialog({ onProjectCreated }: CreateProjectDialogPro
               LLM used for text chunking, speaker detection, and emotion analysis
             </p>
           </div>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox
+              checked={mergeShortChunks}
+              onCheckedChange={(v) => setMergeShortChunks(!!v)}
+            />
+            Merge short / punctuation-only chunks after segmentation
+          </label>
         </div>
 
         <DialogFooter>

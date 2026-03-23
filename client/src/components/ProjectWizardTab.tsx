@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, BookOpen, Users, Volume2, Wand2, Loader2, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
   const [title, setTitle] = useState("");
   const [pastedText, setPastedText] = useState("");
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL.id);
+  const [mergeShortChunks, setMergeShortChunks] = useState(true);
   const [ttsEngine, setTTSEngine] = useState<TTSEngine>(() => {
     const saved = localStorage.getItem("voxlibris-default-engine");
     return (saved as TTSEngine) || "edge-tts";
@@ -125,7 +127,7 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
       const segRes = await fetch(`/api/projects/${project.id}/segment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: selectedModel }),
+        body: JSON.stringify({ model: selectedModel, merge_short_chunks: mergeShortChunks }),
         credentials: "include",
       });
       if (!segRes.ok) {
@@ -454,6 +456,14 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
                 </Select>
               </div>
             </div>
+
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={mergeShortChunks}
+                onCheckedChange={(v) => setMergeShortChunks(!!v)}
+              />
+              Merge short / punctuation-only chunks after segmentation
+            </label>
           </CardContent>
         </Card>
       )}
