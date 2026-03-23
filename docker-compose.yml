@@ -17,7 +17,17 @@ services:
       retries: 5
 
   app:
-    build: .
+    # To run off of a locally built image:
+    # This will use the most image tagged as a release; alternatively you can
+    # either use:
+    # build: .
+    #
+    # or called docker-build.sh on Docker or Docker Swarm host and refer to the
+    # custom image as:
+    # image: voxlibris:latest
+    #
+
+    image: ghcr.io/ultimaratio-regum/voxlibris:latest
     restart: unless-stopped
     depends_on:
       db:
