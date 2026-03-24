@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { ChevronRight, ChevronDown, Book, FileText, Layers, Type, Loader2, CheckCircle2, AlertCircle, Settings2, Mic, Users, Music, BookOpen, ShieldCheck, Flag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectData, ProjectChapter, ProjectSection, ProjectChunk } from "@shared/schema";
@@ -42,6 +42,8 @@ interface ProjectTreeProps {
   onSelect: (selection: TreeSelection) => void;
   onMultiSelect: (chunkIds: Set<string>, chunks: ProjectChunk[]) => void;
   validationData?: ValidationTreeData;
+  selectedValidationChunkIds: Set<string>;
+  onValidationMultiSelect: (ids: Set<string>) => void;
 }
 
 function StatusIcon({ status }: { status: string }) {
@@ -97,9 +99,10 @@ function TreeNode({
   );
 }
 
-export function ProjectTree({ project, selection, selectedChunkIds, onSelect, onMultiSelect, validationData }: ProjectTreeProps) {
+export function ProjectTree({ project, selection, selectedChunkIds, onSelect, onMultiSelect, validationData, selectedValidationChunkIds, onValidationMultiSelect }: ProjectTreeProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(["project", "book-content"]));
   const lastClickedChunkRef = useRef<string | null>(null);
+  const lastClickedValidationChunkRef = useRef<string | null>(null);
 
   const toggleNode = (id: string) => {
     setExpandedNodes((prev) => {
@@ -181,6 +184,50 @@ export function ProjectTree({ project, selection, selectedChunkIds, onSelect, on
     onMultiSelect(new Set(), []);
     onSelect(sel);
   }, [onSelect, onMultiSelect]);
+
+  const handleValidationChunkClick = useCallback((e: React.MouseEvent, fc: ValidationFlaggedChunk) => {
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const isShift = e.shiftKey;
+    const flaggedChunks = validationData?.flaggedChunks ?? [];
+    if (isCtrl) {
+      const newSet = new Set(selectedValidationChunkIds);
+      if (newSet.size === 0 && selection?.type === "validation-chunk" && selection.id !== fc.chunkId) {
+        newSet.add(selection.id);
+      }
+      if (newSet.has(fc.chunkId)) { newSet.delete(fc.chunkId); } else { newSet.add(fc.chunkId); }
+      lastClickedValidationChunkRef.current = fc.chunkId;
+      if (newSet.size === 1) {
+        const remainingId = Array.from(newSet)[0];
+        const remaining = flaggedChunks.find(c => c.chunkId === remainingId);
+        if (remaining) {
+          onValidationMultiSelect(new Set());
+          onSelect({ type: "validation-chunk", id: remainingId, data: remaining });
+        }
+      } else if (newSet.size === 0) {
+        onValidationMultiSelect(new Set());
+      } else {
+        onValidationMultiSelect(newSet);
+      }
+    } else if (isShift && lastClickedValidationChunkRef.current) {
+      const lastIdx = flaggedChunks.findIndex(c => c.chunkId === lastClickedValidationChunkRef.current);
+      const currentIdx = flaggedChunks.findIndex(c => c.chunkId === fc.chunkId);
+      if (lastIdx >= 0 && currentIdx >= 0) {
+        const start = Math.min(lastIdx, currentIdx);
+        const end = Math.max(lastIdx, currentIdx);
+        const newSet = new Set(selectedValidationChunkIds);
+        for (const c of flaggedChunks.slice(start, end + 1)) { newSet.add(c.chunkId); }
+        onValidationMultiSelect(newSet);
+      } else {
+        const newSet = new Set(selectedValidationChunkIds);
+        newSet.add(fc.chunkId);
+        onValidationMultiSelect(newSet);
+      }
+    } else {
+      lastClickedValidationChunkRef.current = fc.chunkId;
+      onValidationMultiSelect(new Set());
+      onSelect({ type: "validation-chunk", id: fc.chunkId, data: fc });
+    }
+  }, [selectedValidationChunkIds, selection, onSelect, onValidationMultiSelect, validationData]);
 
   const chapters = project.chapters || [];
   const isProjectExpanded = expandedNodes.has("project");
@@ -265,9 +312,9 @@ export function ProjectTree({ project, selection, selectedChunkIds, onSelect, on
                     label={fc.chunkText.substring(0, 50) + (fc.chunkText.length > 50 ? "…" : "")}
                     sublabel={`${(fc.combinedScore * 100).toFixed(0)}%`}
                     status=""
-                    isSelected={selectedChunkIds.size === 0 && selection?.type === "validation-chunk" && selection.id === fc.chunkId}
+                    isSelected={selectedValidationChunkIds.has(fc.chunkId) || (selectedValidationChunkIds.size === 0 && selection?.type === "validation-chunk" && selection.id === fc.chunkId)}
                     hasChildren={false} depth={2}
-                    onClick={() => handleNonChunkClick({ type: "validation-chunk", id: fc.chunkId, data: fc })}
+                    onClick={(e) => handleValidationChunkClick(e, fc)}
                     testId={`tree-validation-chunk-${fc.chunkId}`}
                   />
                 ))}

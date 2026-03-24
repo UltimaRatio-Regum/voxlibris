@@ -17,6 +17,7 @@ import {
 import { ProjectTree, type TreeSelection, type ValidationTreeData } from "@/components/ProjectTree";
 import { ProjectDetailPanel } from "@/components/ProjectDetailPanel";
 import { BulkOverridePanel } from "@/components/BulkOverridePanel";
+import { ValidationMultiSelectPanel } from "@/components/ValidationMultiSelectPanel";
 import { BackupProjectDialog } from "@/components/BackupProjectDialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -35,8 +36,42 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
   const [selectedChunks, setSelectedChunks] = useState<ProjectChunk[]>([]);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [generateAfterSave, setGenerateAfterSave] = useState(false);
+  const [selectedValidationChunkIds, setSelectedValidationChunkIds] = useState<Set<string>>(new Set());
 
   const settingsPanelRef = useRef<{ save: () => void; isDirty: () => boolean } | null>(null);
+
+  const [treeWidth, setTreeWidth] = useState(320);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = treeWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [treeWidth]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = e.clientX - dragStartX.current;
+      setTreeWidth(Math.min(600, Math.max(200, dragStartWidth.current + delta)));
+    };
+    const onUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   const { data: project, isLoading, error } = useQuery<ProjectData>({
     queryKey: ["/api/projects", projectId],
@@ -114,6 +149,10 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
     setSelectedChunks([]);
   }, []);
 
+  const handleClearValidationSelection = useCallback(() => {
+    setSelectedValidationChunkIds(new Set());
+  }, []);
+
   const handleGenerateProject = async () => {
     if (!project) return;
     try {
@@ -188,6 +227,7 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
   }
 
   const showBulkPanel = selectedChunkIds.size > 1;
+  const showValidationMultiPanel = selectedValidationChunkIds.size > 1;
   const hasGeneratedAudio = (project.audioFiles || []).some(af => af.scopeType !== "export");
   const isSegmenting = project.status === "segmenting";
 
@@ -206,17 +246,19 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-4">
-        <Card className="col-span-12 md:col-span-4 flex flex-col h-[calc(100vh-200px)]">
+      <div className="flex gap-0 items-stretch">
+        <Card className="flex flex-col h-[calc(100vh-200px)] shrink-0" style={{ width: treeWidth }}>
           <ScrollArea className="flex-1 overflow-hidden">
             <div className="p-3">
               <ProjectTree
                 project={project}
                 selection={selection}
                 selectedChunkIds={selectedChunkIds}
-                onSelect={setSelection}
-                onMultiSelect={handleMultiSelect}
+                onSelect={(sel) => { if (sel.type !== "validation-chunk") setSelectedValidationChunkIds(new Set()); setSelection(sel); }}
+                onMultiSelect={(ids, chunks) => { setSelectedValidationChunkIds(new Set()); handleMultiSelect(ids, chunks); }}
                 validationData={validationData}
+                selectedValidationChunkIds={selectedValidationChunkIds}
+                onValidationMultiSelect={setSelectedValidationChunkIds}
               />
             </div>
           </ScrollArea>
@@ -257,10 +299,23 @@ export function ProjectEditor({ projectId, onBack }: ProjectEditorProps) {
           </div>
         </Card>
 
-        <Card className="col-span-12 md:col-span-8">
+        {/* Drag handle */}
+        <div
+          className="w-1.5 shrink-0 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors mx-1 rounded-full"
+          onMouseDown={handleDragStart}
+        />
+
+        <Card className="flex-1 min-w-0">
           <ScrollArea className="h-[calc(100vh-200px)]">
             <div className="p-4">
-              {showBulkPanel ? (
+              {showValidationMultiPanel ? (
+                <ValidationMultiSelectPanel
+                  selectedIds={selectedValidationChunkIds}
+                  project={project}
+                  onRefresh={handleRefresh}
+                  onClearSelection={handleClearValidationSelection}
+                />
+              ) : showBulkPanel ? (
                 <BulkOverridePanel
                   selectedChunks={selectedChunks}
                   selectedChunkIds={selectedChunkIds}
