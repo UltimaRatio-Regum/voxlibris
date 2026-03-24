@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import logoHorizontal from "@assets/vl_full_logo_horizontal.png";
+import logoHorizontal from "@assets/tomevox_logo_horizontal.png";
 
 interface RegisterPageProps {
   onShowLogin: () => void;
@@ -90,7 +90,7 @@ export function RegisterPage({ onShowLogin }: RegisterPageProps) {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <img src={logoHorizontal} alt="VoxLibris" className="h-12 w-auto" />
+            <img src={logoHorizontal} alt="TomeVox" className="h-12 w-auto" />
           </div>
           <CardTitle data-testid="text-register-title">Create Account</CardTitle>
           <CardDescription>

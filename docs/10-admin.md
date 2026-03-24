@@ -57,7 +57,7 @@ When registration mode is set to **Invite Only**:
 
 ## Data Isolation
 
-VoxLibris enforces data isolation between users:
+TomeVox enforces data isolation between users:
 
 - **Projects** — Each user can only see their own projects
 - **Custom Voices** — Voice uploads are private to each user

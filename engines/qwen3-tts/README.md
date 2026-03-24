@@ -1,5 +1,5 @@
 ---
-title: VoxLibris Qwen3 TTS Engine
+title: TomeVox Qwen3 TTS Engine
 emoji: 🗣️
 colorFrom: green
 colorTo: green
@@ -8,10 +8,10 @@ app_port: 7860
 pinned: false
 ---
 
-# VoxLibris Qwen3 TTS Engine
+# TomeVox Qwen3 TTS Engine
 
 A HuggingFace Space that serves Qwen3-TTS as a REST API for text-to-speech,
-implementing the [VoxLibris TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+implementing the [TomeVox TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
 
 Uses two Qwen3-TTS models:
 - **Qwen3-TTS-12Hz-1.7B-CustomVoice** for built-in speaker generation with instruct-based emotion control
@@ -27,7 +27,7 @@ Returns engine capabilities, 9 built-in voices, supported emotions, and language
 
 Converts text to speech. Supports:
 - 9 built-in speakers (Ryan, Aiden, Vivian, Serena, Uncle Fu, Dylan, Eric, Ono Anna, Sohee)
-- Instruct-based emotion control mapped from the VoxLibris emotion set
+- Instruct-based emotion control mapped from the TomeVox emotion set
 - Voice cloning via base64-encoded WAV reference audio (x-vector mode)
 - Speed adjustment via pyrubberband time-stretching
 - Pitch adjustment via pyrubberband pitch-shifting
@@ -79,4 +79,4 @@ On HuggingFace Spaces, use an L4 or A10G instance.
 3. Upload the contents of this folder
 4. Set the `API_KEY` secret in Space settings (optional)
 5. Models download automatically on first startup
-6. Register the Space URL in VoxLibris Settings under TTS Engine Management
+6. Register the Space URL in TomeVox Settings under TTS Engine Management

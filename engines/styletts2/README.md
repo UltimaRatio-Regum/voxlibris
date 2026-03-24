@@ -1,5 +1,5 @@
 ---
-title: VoxLibris StyleTTS2 Engine
+title: TomeVox StyleTTS2 Engine
 emoji: 🎭
 colorFrom: purple
 colorTo: pink
@@ -8,11 +8,11 @@ app_port: 7860
 pinned: false
 ---
 
-# VoxLibris StyleTTS2 TTS Engine
+# TomeVox StyleTTS2 TTS Engine
 
 A HuggingFace Space that serves [StyleTTS2](https://github.com/yl4579/StyleTTS2) as a REST API for
 text-to-speech with emotion control and voice cloning, implementing the
-[VoxLibris TTS Engine API Contract](../../docs/tts-api-contract.md).
+[TomeVox TTS Engine API Contract](../../docs/tts-api-contract.md).
 
 StyleTTS2 achieves human-level TTS synthesis through style diffusion and adversarial
 training with large speech language models (SLMs). It uses a diffusion model to
@@ -74,4 +74,4 @@ The LibriTTS multi-speaker model (~1.8 GB) downloads automatically on first star
 3. Select a GPU runtime (T4 recommended)
 4. Set the `API_KEY` secret in Space settings (optional)
 5. The model downloads automatically on first startup (~2 GB)
-6. Register the Space URL in VoxLibris Settings under TTS Engine Management
+6. Register the Space URL in TomeVox Settings under TTS Engine Management

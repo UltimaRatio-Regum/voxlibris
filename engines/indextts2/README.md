@@ -1,5 +1,5 @@
 ---
-title: VoxLibris IndexTTS2 Engine
+title: TomeVox IndexTTS2 Engine
 emoji: 🎙️
 colorFrom: purple
 colorTo: indigo
@@ -8,11 +8,11 @@ app_port: 7860
 pinned: false
 ---
 
-# VoxLibris IndexTTS2 Engine
+# TomeVox IndexTTS2 Engine
 
 A HuggingFace Space that serves [IndexTTS2](https://github.com/index-tts/index-tts)
 as a REST API, implementing the
-[VoxLibris TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+[TomeVox TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
 
 ## Endpoints
 
@@ -50,7 +50,7 @@ identity.
 
 IndexTTS2 uses an 8-dimensional emotion vector system (happy, angry, sad,
 afraid, disgusted, melancholic, surprised, calm) with a fine-tuned Qwen3
-model for emotion analysis. VoxLibris emotions are automatically mapped
+model for emotion analysis. TomeVox emotions are automatically mapped
 to appropriate vector blends:
 
 | Emotion     | Mapping Strategy                      |
@@ -104,4 +104,4 @@ prosody reinforcement is applied via pyrubberband speed/pitch adjustments.
 3. Set the `API_KEY` secret in Space settings (optional)
 4. The model downloads automatically during build (~5 GB)
 5. Requires GPU (A10G or better recommended for reasonable speed)
-6. Register the Space URL in VoxLibris Settings under TTS Engine Management
+6. Register the Space URL in TomeVox Settings under TTS Engine Management

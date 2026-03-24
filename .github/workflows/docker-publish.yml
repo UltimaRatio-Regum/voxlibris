@@ -12,7 +12,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # github.repository preserves original casing (UltimaRatio-Regum/voxlibris).
+  # github.repository preserves original casing (UltimaRatio-Regum/tomevox).
   # OCI registry refs must be lowercase, so we compute IMAGE_NAME_LC in step 2
   # and use that everywhere a registry reference appears.
 
@@ -88,7 +88,7 @@ jobs:
             # Also tag as `latest` — but only for stable (non-pre-release) tags
             type=raw,value=latest,enable=${{ env.IS_PRERELEASE == 'false' }}
           labels: |
-            org.opencontainers.image.title=VoxLibris
+            org.opencontainers.image.title=TomeVox
             org.opencontainers.image.description=Self-hosted AI audiobook creator
             org.opencontainers.image.url=https://github.com/${{ github.repository }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

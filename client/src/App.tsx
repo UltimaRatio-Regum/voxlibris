@@ -41,7 +41,7 @@ function AuthGate() {
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="voxlibris-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="tomevox-theme">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AuthProvider>

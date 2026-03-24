@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import logoHorizontal from "@assets/vl_full_logo_horizontal.png";
+import logoHorizontal from "@assets/tomevox_logo_horizontal.png";
 
 interface LoginPageProps {
   onShowRegister: () => void;
@@ -47,7 +47,7 @@ export function LoginPage({ onShowRegister }: LoginPageProps) {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <img src={logoHorizontal} alt="VoxLibris" className="h-12 w-auto" />
+            <img src={logoHorizontal} alt="TomeVox" className="h-12 w-auto" />
           </div>
           <CardTitle data-testid="text-login-title">Sign In</CardTitle>
           <CardDescription>Enter your credentials to continue</CardDescription>

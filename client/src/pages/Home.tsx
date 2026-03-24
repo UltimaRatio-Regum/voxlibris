@@ -9,7 +9,7 @@ import { ProjectEditor } from "@/components/ProjectEditor";
 import { AdminUsersPage } from "@/pages/AdminUsersPage";
 import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
 import { useAuth } from "@/lib/auth";
-import logoHorizontal from "@assets/vl_full_logo_horizontal.png";
+import logoHorizontal from "@assets/tomevox_logo_horizontal.png";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,7 +58,7 @@ export default function Home() {
           <div className="flex items-center">
             <img 
               src={logoHorizontal} 
-              alt="VoxLibris" 
+              alt="TomeVox"
               className="h-10 w-auto"
             />
           </div>

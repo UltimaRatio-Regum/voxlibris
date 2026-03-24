@@ -35,13 +35,13 @@ export function ProjectWizardTab({ onProjectCreated }: ProjectWizardTabProps) {
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL.id);
   const [mergeShortChunks, setMergeShortChunks] = useState(true);
   const [ttsEngine, setTTSEngine] = useState<TTSEngine>(() => {
-    const saved = localStorage.getItem("voxlibris-default-engine");
+    const saved = localStorage.getItem("tomevox-default-engine");
     return (saved as TTSEngine) || "edge-tts";
   });
   const [projectId, setProjectId] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState<"single" | "characters">("single");
   const [singleVoice, setSingleVoice] = useState<string>(() => {
-    return localStorage.getItem("voxlibris-default-voice") || "edge:en-US-AriaNeural";
+    return localStorage.getItem("tomevox-default-voice") || "edge:en-US-AriaNeural";
   });
   const [characterVoices, setCharacterVoices] = useState<Record<string, string>>({});
 

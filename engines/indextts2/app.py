@@ -28,7 +28,7 @@ CHANNELS = 1
 MAX_SECONDS = 60
 MAX_CHARS = 500
 
-VOXLIBRIS_TO_INDEXTTS2_EMOTIONS = {
+TOMEVOX_TO_INDEXTTS2_EMOTIONS = {
     "neutral": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8],
     "happy": [0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
     "angry": [0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1],
@@ -180,7 +180,7 @@ def blend_emotion_vectors(emotion_set: list[str],
     intensity_factor = intensity / 50.0
 
     if not emotion_set or emotion_set == ["neutral"]:
-        base = VOXLIBRIS_TO_INDEXTTS2_EMOTIONS.get("neutral",
+        base = TOMEVOX_TO_INDEXTTS2_EMOTIONS.get("neutral",
                                                    [0.0] * 7 + [0.8])
         return list(base)
 
@@ -188,14 +188,14 @@ def blend_emotion_vectors(emotion_set: list[str],
     count = 0
     for emo in emotion_set:
         emo_lower = emo.lower()
-        vec = VOXLIBRIS_TO_INDEXTTS2_EMOTIONS.get(emo_lower)
+        vec = TOMEVOX_TO_INDEXTTS2_EMOTIONS.get(emo_lower)
         if vec:
             for i in range(8):
                 blended[i] += vec[i]
             count += 1
 
     if count == 0:
-        return list(VOXLIBRIS_TO_INDEXTTS2_EMOTIONS["neutral"])
+        return list(TOMEVOX_TO_INDEXTTS2_EMOTIONS["neutral"])
 
     blended = [v / count for v in blended]
 
@@ -433,7 +433,7 @@ async def root():
     <head><title>IndexTTS2 Engine</title></head>
     <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px;">
         <h1>IndexTTS2 Engine</h1>
-        <p>VoxLibris-compatible TTS engine powered by
+        <p>TomeVox-compatible TTS engine powered by
            <a href="https://github.com/index-tts/index-tts">IndexTTS2</a>.</p>
         <h2>Endpoints</h2>
         <ul>

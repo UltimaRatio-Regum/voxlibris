@@ -549,7 +549,7 @@ async def root():
     <head><title>Chatterbox TTS Engine</title></head>
     <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px;">
         <h1>Chatterbox TTS Engine</h1>
-        <p>VoxLibris-compatible TTS engine powered by <a href="https://github.com/resemble-ai/chatterbox">Chatterbox TTS</a>.</p>
+        <p>TomeVox-compatible TTS engine powered by <a href="https://github.com/resemble-ai/chatterbox">Chatterbox TTS</a>.</p>
         <h2>Endpoints</h2>
         <ul>
             <li><code>POST /GetEngineDetails</code> - Get engine capabilities</li>

@@ -28,7 +28,7 @@ Give your project a meaningful name. If you upload a file, the filename is used 
 
 ## Step 2: Analyzing
 
-Once you submit your text, VoxLibris processes it automatically:
+Once you submit your text, TomeVox processes it automatically:
 
 1. **Text segmentation** — The text is divided into logical sections
 2. **Chunk creation** — Sections are split into audio-sized chunks (typically 8-12 seconds each)

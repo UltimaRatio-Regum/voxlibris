@@ -1,6 +1,6 @@
 ---
 title: Speaker Detection & Assignment
-description: How VoxLibris identifies speakers and how to manage assignments
+description: How TomeVox identifies speakers and how to manage assignments
 category: Projects
 order: 7
 keywords: [speakers, dialogue, detection, assignment, characters, narrator, merge]
@@ -8,7 +8,7 @@ keywords: [speakers, dialogue, detection, assignment, characters, narrator, merg
 
 # Speaker Detection & Assignment
 
-VoxLibris uses AI-powered analysis to identify who is speaking in your text. Understanding how this works helps you get better results.
+TomeVox uses AI-powered analysis to identify who is speaking in your text. Understanding how this works helps you get better results.
 
 ## How Speaker Detection Works
 

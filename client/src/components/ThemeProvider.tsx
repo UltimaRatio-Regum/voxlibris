@@ -15,7 +15,7 @@ const ThemeProviderContext = createContext<ThemeProviderContextProps>({
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  storageKey = "voxlibris-theme",
+  storageKey = "tomevox-theme",
 }: {
   children: React.ReactNode;
   defaultTheme?: Theme;

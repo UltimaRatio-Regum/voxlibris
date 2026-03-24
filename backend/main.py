@@ -5046,7 +5046,7 @@ async def backup_project(
         # ── Assemble backup JSON ───────────────────────────────────────────────
         backup = {
             "version": "1.0",
-            "app": "VoxLibris",
+            "app": "TomeVox",
             "exported_at": datetime.utcnow().isoformat() + "Z",
             "project": {
                 "title": project.title,

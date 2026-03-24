@@ -1,6 +1,6 @@
 #!/bin/bash
 
-IMAGE_NAME="voxlibris"
+IMAGE_NAME="tomevox"
 VERSION="${1:-}"
 
 if [ -n "$VERSION" ]; then

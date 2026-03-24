@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir setuptools && \
     pip install --no-cache-dir --no-build-isolation openai-whisper==20231117 && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy our VoxLibris engine files into the repo root, alongside
+# Copy our TomeVox engine files into the repo root, alongside
 # glmtts_inference.py so Python can import it without path manipulation.
 COPY app.py .
 COPY index.html .

@@ -228,7 +228,7 @@ def load_libritts_samples():
 
 
 if __name__ == "__main__":
-    print("VoxLibris Voice Library Initialization")
+    print("TomeVox Voice Library Initialization")
     print(f"Source: {VOICE_SAMPLES_DIR}")
     print()
     load_voice_samples()

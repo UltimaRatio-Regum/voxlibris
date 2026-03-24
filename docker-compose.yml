@@ -24,10 +24,10 @@ services:
     #
     # or called docker-build.sh on Docker or Docker Swarm host and refer to the
     # custom image as:
-    # image: voxlibris:latest
+    # image: tomevox:latest
     #
 
-    image: ghcr.io/ultimaratio-regum/voxlibris:latest
+    image: ghcr.io/ultimaratio-regum/tomevox:latest
     restart: unless-stopped
     depends_on:
       db:

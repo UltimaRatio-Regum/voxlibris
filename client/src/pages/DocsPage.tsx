@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import logoHorizontal from "@assets/vl_full_logo_horizontal.png";
+import logoHorizontal from "@assets/tomevox_logo_horizontal.png";
 
 interface DocEntry {
   slug: string;
@@ -120,7 +120,7 @@ function DocsSidebar({
       <div className="p-4 border-b">
         <div className="flex items-center justify-between mb-3">
           <Link href="/docs" className="flex items-center gap-2">
-            <img src={logoHorizontal} alt="VoxLibris" className="h-7 w-auto" />
+            <img src={logoHorizontal} alt="TomeVox" className="h-7 w-auto" />
             <span className="text-sm font-medium text-muted-foreground">Docs</span>
           </Link>
           <Button
@@ -325,9 +325,9 @@ export default function DocsPage() {
 
   useEffect(() => {
     if (doc?.title) {
-      document.title = `${doc.title} - VoxLibris Docs`;
+      document.title = `${doc.title} - TomeVox Docs`;
     } else {
-      document.title = "VoxLibris Documentation";
+      document.title = "TomeVox Documentation";
     }
   }, [doc?.title]);
 

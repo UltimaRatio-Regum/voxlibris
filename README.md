@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/images/voxlibris-logo.png" alt="VoxLibris" width="80" />
+  <img src="docs/images/tomevox-logo.png" alt="TomeVox" width="80" />
 </p>
 
-<h1 align="center">VoxLibris</h1>
+<h1 align="center">TomeVox</h1>
 
 <p align="center">
   <strong>Self-hosted AI audiobook creator — turn ebooks into expressive, multi-voice audiobooks</strong>
@@ -28,9 +28,9 @@
 
 ---
 
-VoxLibris transforms plain text and EPUB files into full-length, multi-voice audiobooks with automatic speaker detection, emotion analysis, and chapter-aware M4B export. It runs entirely on your own infrastructure — no per-character fees, no cloud lock-in, no usage caps.
+TomeVox transforms plain text and EPUB files into full-length, multi-voice audiobooks with automatic speaker detection, emotion analysis, and chapter-aware M4B export. It runs entirely on your own infrastructure — no per-character fees, no cloud lock-in, no usage caps.
 
-Upload an ebook, and VoxLibris will:
+Upload an ebook, and TomeVox will:
 
 1. **Parse and segment** the text into chapters, sections, and audio-sized chunks
 2. **Detect speakers** — identify dialogue, attribute it to characters, and separate narration
@@ -47,7 +47,7 @@ Upload an ebook, and VoxLibris will:
 - **Engine-agnostic architecture** — Plug in any TTS engine that implements two REST endpoints. Swap between Chatterbox, XTTSv2, StyleTTS2, Edge TTS, and more without touching application code
 - **Voice cloning** — Upload a short audio sample and clone it as a character voice (engine-dependent)
 - **AI voice analysis** — Automatically extract display name, gender, accent, and a speech transcript from any custom voice sample or VCTK library entry using a vision-capable LLM
-- **Engine-specific parameters** — Engines declare their own tunable controls (e.g., Chatterbox exposes Exaggeration, CFG Weight, Temperature). VoxLibris auto-discovers them on registration and presents them as UI controls
+- **Engine-specific parameters** — Engines declare their own tunable controls (e.g., Chatterbox exposes Exaggeration, CFG Weight, Temperature). TomeVox auto-discovers them on registration and presents them as UI controls
 - **Hierarchical project editor** — Book → Chapter → Section → Chunk tree with cascading settings overrides at every level
 - **Per-chunk control** — Override speaker, emotion, voice, speed, pitch, and engine for any individual chunk and regenerate just that segment
 - **Emotion prosody weights** — Fine-tune how each emotion maps to pitch, speed, volume, and intensity adjustments per engine
@@ -107,7 +107,7 @@ services:
    app:
       build: .  
       # Optionally, use the docker-build.sh script and do
-      #image: voxlibris:latest
+      #image: tomevox:latest
       restart: unless-stopped
       depends_on:
          db:
@@ -158,12 +158,12 @@ After copying, reload the project in your IDE and the configurations will appear
 
 1. Go to **Settings** → **TTS Engine Management**
 2. Enter your engine's URL (e.g., your HuggingFace Space endpoint)
-3. Click **Add Engine** — VoxLibris will auto-discover the engine's capabilities
+3. Click **Add Engine** — TomeVox will auto-discover the engine's capabilities
 4. The engine appears in the engine table with its status, voice count, and cloning support
 
 ## Supported TTS Engines
 
-VoxLibris uses a plugin architecture — any service implementing the [TTS Engine API contract](#tts-engine-api) works out of the box.
+TomeVox uses a plugin architecture — any service implementing the [TTS Engine API contract](#tts-engine-api) works out of the box.
 
 | Engine | Type | Voice Cloning | Emotion Support | Notes |
 |--------|------|:---:|:---:|-------|
@@ -199,7 +199,7 @@ The recommended way to run GPU-accelerated engines is as a [HuggingFace Space](h
 3. **Copy the engine files** from the `engines/<engine-name>/` folder in this repository into the cloned Space directory:
    ```bash
    # example for Chatterbox
-   cp -r /path/to/VoxLibris/engines/chatterbox/* .
+   cp -r /path/to/TomeVox/engines/chatterbox/* .
    ```
 
 4. **Commit and push** to HuggingFace:
@@ -223,7 +223,7 @@ By default a running Space is publicly reachable. Anyone with the URL could use 
    ```
 3. Save the secret. The engine will now reject any request that does not include this key.
 
-When adding the engine to VoxLibris (**Settings → TTS Engine Management**), paste the same key into the **API Token** field. VoxLibris forwards it as a Bearer token on every request.
+When adding the engine to TomeVox (**Settings → TTS Engine Management**), paste the same key into the **API Token** field. TomeVox forwards it as a Bearer token on every request.
 
 #### Available engines
 
@@ -237,13 +237,13 @@ When adding the engine to VoxLibris (**Settings → TTS Engine Management**), pa
 | `engines/openvoice-v2` | OpenVoice V2 | ✅ |
 | `engines/indextts2` | IndexTTS2 | ✅ |
 
-VoxLibris handles cold-start warm-up automatically — it polls the engine every 5 seconds (with a 5-second per-request timeout) for up to 10 minutes, and shows a progress indicator in the Jobs view until the Space is ready.
+TomeVox handles cold-start warm-up automatically — it polls the engine every 5 seconds (with a 5-second per-request timeout) for up to 10 minutes, and shows a progress indicator in the Jobs view until the Space is ready.
 
 ## How It Works
 
 ### Text Analysis Pipeline
 
-When you upload text or an EPUB, VoxLibris sends it through an LLM (via OpenRouter) that:
+When you upload text or an EPUB, TomeVox sends it through an LLM (via OpenRouter) that:
 
 1. **Segments** the text into sections of ~30 chunks each
 2. **Splits** each section into individual chunks at sentence and quote boundaries
@@ -260,7 +260,7 @@ The parsing prompt is fully editable in Settings, so you can customize the behav
 
 ### Audio Generation Pipeline
 
-For each chunk, VoxLibris:
+For each chunk, TomeVox:
 
 1. Resolves the voice — narrator default, per-speaker assignment, or chunk-level override
 2. Resolves the emotion — auto-detected, narrator override, or dialogue flattening
@@ -286,7 +286,7 @@ This means you can set a default voice for the whole book, override it for a spe
 
 ### Text Segmentation (OpenRouter)
 
-VoxLibris uses an LLM to segment, attribute, and label each chunk of text before audio generation. This requires an OpenAI-compatible API endpoint. **[OpenRouter](https://openrouter.ai)** is strongly recommended — it gives access to dozens of models (GPT-4o, Claude, Gemini, Llama, etc.) through a single API key, with pay-as-you-go pricing.
+TomeVox uses an LLM to segment, attribute, and label each chunk of text before audio generation. This requires an OpenAI-compatible API endpoint. **[OpenRouter](https://openrouter.ai)** is strongly recommended — it gives access to dozens of models (GPT-4o, Claude, Gemini, Llama, etc.) through a single API key, with pay-as-you-go pricing.
 
 Set these two environment variables (or add them to `.env`):
 
@@ -327,7 +327,7 @@ All other configuration is managed through the Settings UI:
 
 ## TTS Engine API
 
-Any TTS service can integrate with VoxLibris by implementing two endpoints:
+Any TTS service can integrate with TomeVox by implementing two endpoints:
 
 ### `POST /GetEngineDetails`
 
@@ -382,17 +382,17 @@ See the full [TTS Engine API Contract](docs/tts-api-contract.md) for the complet
 
 ## Cost Comparison
 
-VoxLibris runs on your own GPU. Here's how the economics compare for producing audiobooks at volume:
+TomeVox runs on your own GPU. Here's how the economics compare for producing audiobooks at volume:
 
 | Approach | Cost for a ~80,000 word novel (~8hrs audio) | Monthly cost at 4 books/month |
 |----------|---:|---:|
 | **ElevenLabs Pro** ($99/mo) | ~$99+ (500K chars included, overages at $0.24/1K) | $200–400+ |
 | **ElevenLabs Scale** ($330/mo) | ~$330 (2M chars included) | $330+ |
 | **Human narrator** | $800–4,000 (at $100–500/finished hour) | $3,200–16,000 |
-| **VoxLibris + A10G** ($1/hr GPU) | ~$4–6 (4–6 hours of GPU time) | ~$16–24 |
-| **VoxLibris + L40S** ($1.80/hr GPU) | ~$5–9 (3–5 hours, faster generation) | ~$20–36 |
+| **TomeVox + A10G** ($1/hr GPU) | ~$4–6 (4–6 hours of GPU time) | ~$16–24 |
+| **TomeVox + L40S** ($1.80/hr GPU) | ~$5–9 (3–5 hours, faster generation) | ~$20–36 |
 
-The more you produce, the wider the gap. VoxLibris has no per-character metering, no monthly caps, and no credit system.
+The more you produce, the wider the gap. TomeVox has no per-character metering, no monthly caps, and no credit system.
 
 ## Docs
 
