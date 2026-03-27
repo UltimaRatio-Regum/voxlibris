@@ -1,18 +1,18 @@
 ---
 title: Getting Started
-description: Quick start guide for TomeVox - transform text into expressive audiobooks
+description: Quick start guide for narrate.ink - transform text into expressive audiobooks
 category: Basics
 order: 1
 keywords: [getting started, quick start, introduction, setup, first project]
 ---
 
-# Getting Started with TomeVox
+# Getting Started with narrate.ink
 
-TomeVox transforms plain text into expressive audiobooks using advanced AI-powered text-to-speech technology. This guide will walk you through creating your first audiobook.
+narrate.ink transforms plain text into expressive audiobooks using advanced AI-powered text-to-speech technology. This guide will walk you through creating your first audiobook.
 
 ## First Login
 
-When you first access TomeVox, you'll see a login screen. Log in with the administrator credentials provided by your system administrator.
+When you first access narrate.ink, you'll see a login screen. Log in with the administrator credentials provided by your system administrator.
 
 > **Important:** Change your password after your first login by clicking your username in the top-right corner and selecting **Change Password**.
 

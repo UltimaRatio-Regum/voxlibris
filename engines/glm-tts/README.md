@@ -1,5 +1,5 @@
 ---
-title: TomeVox GLM-TTS Engine
+title: narrate.ink GLM-TTS Engine
 emoji: 🎙️
 colorFrom: purple
 colorTo: indigo
@@ -8,11 +8,11 @@ app_port: 7860
 pinned: false
 ---
 
-# TomeVox GLM-TTS Engine
+# narrate.ink GLM-TTS Engine
 
 A HuggingFace Space that serves [GLM-TTS](https://github.com/zai-org/GLM-TTS)
 as a REST API, implementing the
-[TomeVox TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+[narrate.ink TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
 
 GLM-TTS is a zero-shot bilingual (Chinese/English) TTS model by Zhipu AI, capable
 of cloning a speaker's voice from a short reference sample.
@@ -86,4 +86,4 @@ The `intensity` parameter (1-100) scales the emotion effect; 50 is the neutral b
 3. Set the `API_KEY` secret in Space settings (optional)
 4. The model (~several GB) downloads automatically from `zai-org/GLM-TTS` on first startup
 5. **A GPU is required** — the upstream inference code calls `.cuda()` unconditionally (T4 minimum)
-6. Register the Space URL in TomeVox Settings under TTS Engine Management
+6. Register the Space URL in narrate.ink Settings under TTS Engine Management

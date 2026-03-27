@@ -1,5 +1,5 @@
 ---
-title: TomeVox OpenVoice V2 Engine
+title: narrate.ink OpenVoice V2 Engine
 emoji: 🎙️
 colorFrom: yellow
 colorTo: green
@@ -8,11 +8,11 @@ app_port: 7860
 pinned: false
 ---
 
-# TomeVox OpenVoice V2 TTS Engine
+# narrate.ink OpenVoice V2 TTS Engine
 
 A HuggingFace Space that serves MyShell's OpenVoice V2 as a REST API for
 text-to-speech with instant voice cloning, implementing the
-[TomeVox TTS Engine API Contract](../../docs/tts-api-contract.md).
+[narrate.ink TTS Engine API Contract](../../docs/tts-api-contract.md).
 
 OpenVoice V2 uses a two-stage architecture:
 1. **MeloTTS** generates high-quality base speech in the selected language/voice
@@ -85,4 +85,4 @@ On HuggingFace Spaces, a free CPU instance works, but GPU (T4) is recommended fo
 3. Set the `API_KEY` secret in Space settings (optional)
 4. Checkpoints download automatically during Docker build (~200 MB)
 5. MeloTTS models download on first startup from HuggingFace
-6. Register the Space URL in TomeVox Settings under TTS Engine Management
+6. Register the Space URL in narrate.ink Settings under TTS Engine Management

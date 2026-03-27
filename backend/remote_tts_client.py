@@ -1,7 +1,7 @@
 """
 Remote TTS Engine Client
 
-Calls external TTS engines via the TomeVox TTS API Contract.
+Calls external TTS engines via the narrate.ink TTS API Contract.
 Handles GetEngineDetails and ConvertTextToSpeech endpoints.
 """
 

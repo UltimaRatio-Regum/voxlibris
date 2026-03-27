@@ -206,7 +206,7 @@ export function JobsPanel({ onPlayAudio }: JobsPanelProps) {
       if (job.jobType === "export" && job.outputAudioFileId && job.projectId) {
         url = `/api/projects/${job.projectId}/audio/${job.outputAudioFileId}`;
       } else {
-        const maxSilenceMs = localStorage.getItem("tomevox-max-silence-ms") || "300";
+        const maxSilenceMs = localStorage.getItem("narrateink-max-silence-ms") || "300";
         url = `/api/jobs/${job.id}/audio?max_silence_ms=${maxSilenceMs}`;
       }
       const response = await fetch(url, { credentials: "include" });

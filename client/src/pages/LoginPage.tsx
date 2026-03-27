@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import logoHorizontal from "@assets/tomevox_logo_horizontal.png";
+import narrateInkIcon from "@assets/narrate.ink.icon.1024.png";
+import narrateInkLogo from "@assets/narrate.ink.logo.dark.alpha.png";
 
 interface LoginPageProps {
   onShowRegister: () => void;
@@ -46,8 +47,9 @@ export function LoginPage({ onShowRegister }: LoginPageProps) {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <img src={logoHorizontal} alt="TomeVox" className="h-12 w-auto" />
+          <div className="flex flex-col items-center gap-2 mb-4">
+            <img src={narrateInkIcon} alt="narrate.ink" className="h-16 w-16" />
+            <img src={narrateInkLogo} alt="narrate.ink" className="h-7 w-auto" />
           </div>
           <CardTitle data-testid="text-login-title">Sign In</CardTitle>
           <CardDescription>Enter your credentials to continue</CardDescription>

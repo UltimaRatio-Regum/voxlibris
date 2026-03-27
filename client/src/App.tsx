@@ -41,7 +41,7 @@ function AuthGate() {
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="tomevox-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="narrateink-theme">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AuthProvider>

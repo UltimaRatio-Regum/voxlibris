@@ -1,5 +1,5 @@
 ---
-title: TomeVox Qwen3 TTS Engine
+title: narrate.ink Qwen3 TTS Engine
 emoji: 🗣️
 colorFrom: blue
 colorTo: purple
@@ -8,11 +8,11 @@ app_port: 7860
 pinned: false
 ---
 
-# TomeVox Qwen 2.5 Omni TTS Engine
+# narrate.ink Qwen 2.5 Omni TTS Engine
 
 A HuggingFace Space that serves the Qwen2.5-Omni-7B model as a REST API for
 text-to-speech, implementing the
-[TomeVox TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+[narrate.ink TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
 
 ## Endpoints
 
@@ -69,4 +69,4 @@ On HuggingFace Spaces, use an A10G or A100 instance.
 3. Upload the contents of this folder
 4. Set the `API_KEY` secret in Space settings (optional)
 5. The model downloads automatically on first startup (~14 GB)
-6. Register the Space URL in TomeVox Settings under TTS Engine Management
+6. Register the Space URL in narrate.ink Settings under TTS Engine Management

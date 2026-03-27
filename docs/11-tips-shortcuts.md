@@ -8,7 +8,7 @@ keywords: [tips, shortcuts, best practices, workflow, productivity]
 
 # Tips & Shortcuts
 
-Get the most out of TomeVox with these tips and best practices.
+Get the most out of narrate.ink with these tips and best practices.
 
 ## Text Preparation
 

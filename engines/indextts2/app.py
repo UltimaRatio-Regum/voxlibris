@@ -433,7 +433,7 @@ async def root():
     <head><title>IndexTTS2 Engine</title></head>
     <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px;">
         <h1>IndexTTS2 Engine</h1>
-        <p>TomeVox-compatible TTS engine powered by
+        <p>narrate.ink-compatible TTS engine powered by
            <a href="https://github.com/index-tts/index-tts">IndexTTS2</a>.</p>
         <h2>Endpoints</h2>
         <ul>

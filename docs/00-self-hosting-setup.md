@@ -1,6 +1,6 @@
 ---
 title: Self-Hosting Setup
-description: Step-by-step guide to deploying TomeVox — environment variables, database, API keys, and TTS engines
+description: Step-by-step guide to deploying narrate.ink — environment variables, database, API keys, and TTS engines
 category: Setup
 order: 0
 keywords: [setup, self-hosting, docker, postgres, openrouter, huggingface, environment variables, API key]
@@ -8,13 +8,13 @@ keywords: [setup, self-hosting, docker, postgres, openrouter, huggingface, envir
 
 # Self-Hosting Setup
 
-This guide walks through everything needed to run TomeVox from scratch: obtaining an API key, configuring the environment, deploying the application, and connecting a TTS engine.
+This guide walks through everything needed to run narrate.ink from scratch: obtaining an API key, configuring the environment, deploying the application, and connecting a TTS engine.
 
 ---
 
 ## 1. Obtain an OpenRouter API Key
 
-TomeVox uses a language model for two purposes:
+narrate.ink uses a language model for two purposes:
 
 - **Text segmentation & speaker detection** — parsing uploaded text into chunks, identifying speakers, and assigning emotions
 - **AI voice analysis** — extracting display name, gender, accent, and a speech transcript from voice samples (optional)
@@ -34,7 +34,7 @@ Both require an OpenAI-compatible API endpoint. [OpenRouter](https://openrouter.
 
 ## 2. Set Environment Variables
 
-TomeVox is configured through environment variables. The simplest approach is a `.env` file in the project root.
+narrate.ink is configured through environment variables. The simplest approach is a `.env` file in the project root.
 
 Copy the example file:
 
@@ -72,7 +72,7 @@ DB_PORT=5432
 | `AI_INTEGRATIONS_OPENROUTER_BASE_URL` | Recommended | Base URL of the OpenAI-compatible LLM endpoint |
 | `AI_INTEGRATIONS_OPENROUTER_API_KEY` | Recommended | API key for the LLM endpoint — required for text segmentation and voice analysis |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Docker Compose only | Credentials for the bundled Postgres container |
-| `APP_PORT` | No | Host port TomeVox listens on (default: `5000`) |
+| `APP_PORT` | No | Host port narrate.ink listens on (default: `5000`) |
 | `DB_PORT` | No | Host port the Postgres container exposes (default: `5432`) |
 | `VOICE_ANALYSIS_MODEL` | No | LLM model used for voice analysis (default: `google/gemini-2.5-flash`) |
 | `PYTHON_BACKEND_URL` | No | Override the internal Python backend URL (default: `http://127.0.0.1:8000`) |
@@ -83,7 +83,7 @@ DB_PORT=5432
 
 ### 3a. Docker Compose (Recommended)
 
-The bundled `docker-compose.yml` starts both a Postgres container and the TomeVox app container. This is the easiest way to get everything running.
+The bundled `docker-compose.yml` starts both a Postgres container and the narrate.ink app container. This is the easiest way to get everything running.
 
 ```bash
 docker compose up -d
@@ -132,7 +132,7 @@ The schema migration runs automatically at startup regardless of how you deploy.
 
 ## 4. Connect a TTS Engine
 
-TomeVox ships with two built-in engines that require no setup:
+narrate.ink ships with two built-in engines that require no setup:
 
 - **Edge TTS** — Microsoft Azure neural voices, cloud-based, free, no GPU required. Good for testing the full workflow end-to-end before setting up a GPU engine.
 - **Soprano** — Ultra-fast local generation for quick previews.
@@ -181,7 +181,7 @@ Copy all files from the engine folder in this repository into the cloned Space d
 
 ```bash
 # example for Chatterbox — repeat with the engine folder you chose
-cp -r /path/to/TomeVox/engines/chatterbox/* .
+cp -r /path/to/narrate.ink/engines/chatterbox/* .
 ```
 
 Each engine folder contains a `Dockerfile`, `app.py`, `requirements.txt`, and an `index.html`.
@@ -220,9 +220,9 @@ By default, a running Space is publicly reachable. Anyone with the URL could use
 
 The engine will now reject requests that do not include this key as a Bearer token.
 
-### Step 7 — Register the engine in TomeVox
+### Step 7 — Register the engine in narrate.ink
 
-1. Open TomeVox and go to **Settings → Remote TTS Engines**
+1. Open narrate.ink and go to **Settings → Remote TTS Engines**
 2. Click **Add Engine**
 3. Fill in:
    - **Name** — a label for the engine (e.g. "Chatterbox - A10G")
@@ -230,7 +230,7 @@ The engine will now reject requests that do not include this key as a Bearer tok
    - **API Token** — the `API_KEY` secret you set in Step 6
 4. Click **Add Engine**
 
-TomeVox will call `POST /GetEngineDetails` on the Space, verify connectivity, and register the engine. It appears in the engine table with its status and voice count. If the Space is still building or warming up, TomeVox will show it as **warming up** and poll automatically until it's ready.
+narrate.ink will call `POST /GetEngineDetails` on the Space, verify connectivity, and register the engine. It appears in the engine table with its status and voice count. If the Space is still building or warming up, narrate.ink will show it as **warming up** and poll automatically until it's ready.
 
 ---
 
@@ -270,7 +270,7 @@ TomeVox will call `POST /GetEngineDetails` on the Space, verify connectivity, an
 
 - Check the Space is not sleeping — open the Space URL in a browser to wake it
 - Confirm the endpoint URL has no trailing slash
-- Confirm the API Token in TomeVox matches the `API_KEY` secret in the Space exactly
+- Confirm the API Token in narrate.ink matches the `API_KEY` secret in the Space exactly
 - Check the Space build logs for errors (HuggingFace Spaces → Logs tab)
 
 ### Database connection errors on startup

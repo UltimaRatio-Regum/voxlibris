@@ -8,7 +8,7 @@ keywords: [voices, TTS, engine, edge, soprano, voice library, custom, cloning]
 
 # Voice Selection & Configuration
 
-TomeVox supports multiple TTS engines, each offering different voices with unique characteristics. Understanding the available options helps you create more natural-sounding audiobooks.
+narrate.ink supports multiple TTS engines, each offering different voices with unique characteristics. Understanding the available options helps you create more natural-sounding audiobooks.
 
 ## Built-in Engines
 
@@ -51,7 +51,7 @@ Upload your own voice recordings to create custom voices for cloning:
 After uploading a voice sample, you can run AI analysis to automatically extract metadata:
 
 1. Select one or more custom voices in the **Custom Voices** list
-2. Click **Analyze** — TomeVox sends the audio to a vision-capable LLM (via OpenRouter)
+2. Click **Analyze** — narrate.ink sends the audio to a vision-capable LLM (via OpenRouter)
 3. The AI returns:
    - **Suggested display name** — A descriptive name based on the voice characteristics
    - **Gender** — Male / Female / Androgynous
@@ -72,7 +72,7 @@ This metadata is saved with the voice and shown in voice selection lists, making
 
 ## Remote TTS Engines
 
-You can connect external TTS services that implement the TomeVox TTS API contract:
+You can connect external TTS services that implement the narrate.ink TTS API contract:
 
 - **XTTSv2** — Multilingual voice cloning
 - **Qwen2.5/3-TTS** — Chinese/English neural TTS

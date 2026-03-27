@@ -8,7 +8,7 @@ keywords: [emotion, prosody, sentiment, expression, weights, narrator, dialogue]
 
 # Emotion & Prosody
 
-TomeVox uses emotion analysis to make generated speech more expressive. Each text chunk is assigned an emotion that influences how the TTS engine renders the audio.
+narrate.ink uses emotion analysis to make generated speech more expressive. Each text chunk is assigned an emotion that influences how the TTS engine renders the audio.
 
 ## Emotion Detection
 

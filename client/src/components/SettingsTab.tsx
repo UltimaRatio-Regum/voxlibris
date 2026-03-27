@@ -554,16 +554,16 @@ export function SettingsTab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [defaultEngine, setDefaultEngine] = useState(() => 
-    localStorage.getItem("tomevox-default-engine") || "edge-tts"
+    localStorage.getItem("narrateink-default-engine") || "edge-tts"
   );
   const [defaultVoice, setDefaultVoice] = useState(() =>
-    localStorage.getItem("tomevox-default-voice") || ""
+    localStorage.getItem("narrateink-default-voice") || ""
   );
   const [pauseBetweenSegments, setPauseBetweenSegments] = useState(() =>
-    parseInt(localStorage.getItem("tomevox-pause-between-segments") || "150", 10)
+    parseInt(localStorage.getItem("narrateink-pause-between-segments") || "150", 10)
   );
   const [maxSilenceMs, setMaxSilenceMs] = useState(() =>
-    parseInt(localStorage.getItem("tomevox-max-silence-ms") || "300", 10)
+    parseInt(localStorage.getItem("narrateink-max-silence-ms") || "300", 10)
   );
   const [localProsody, setLocalProsody] = useState<ProsodySettings | null>(null);
 
@@ -835,20 +835,20 @@ export function SettingsTab() {
   const handleEngineChange = (engine: string) => {
     setDefaultEngine(engine);
     setDefaultVoice("");
-    localStorage.setItem("tomevox-default-engine", engine);
-    localStorage.removeItem("tomevox-default-voice");
+    localStorage.setItem("narrateink-default-engine", engine);
+    localStorage.removeItem("narrateink-default-voice");
   };
 
   const handleVoiceChange = (voice: string) => {
     setDefaultVoice(voice);
-    localStorage.setItem("tomevox-default-voice", voice);
+    localStorage.setItem("narrateink-default-voice", voice);
   };
 
   const handlePauseBetweenSegmentsChange = (value: string) => {
     const num = parseInt(value, 10);
     if (!isNaN(num) && num >= 0 && num <= 5000) {
       setPauseBetweenSegments(num);
-      localStorage.setItem("tomevox-pause-between-segments", String(num));
+      localStorage.setItem("narrateink-pause-between-segments", String(num));
     }
   };
 
@@ -856,7 +856,7 @@ export function SettingsTab() {
     const num = parseInt(value, 10);
     if (!isNaN(num) && num >= 0 && num <= 5000) {
       setMaxSilenceMs(num);
-      localStorage.setItem("tomevox-max-silence-ms", String(num));
+      localStorage.setItem("narrateink-max-silence-ms", String(num));
     }
   };
 
@@ -1055,7 +1055,7 @@ export function SettingsTab() {
                 TTS Engine Management
               </CardTitle>
               <CardDescription>
-                Register and manage external TTS engines using the TomeVox API contract
+                Register and manage external TTS engines using the narrate.ink API contract
               </CardDescription>
             </div>
           </div>

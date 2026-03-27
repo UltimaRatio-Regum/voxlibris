@@ -1,5 +1,5 @@
 ---
-title: TomeVox XTTSv2 Engine
+title: narrate.ink XTTSv2 Engine
 emoji: 🔊
 colorFrom: purple
 colorTo: indigo
@@ -8,10 +8,10 @@ app_port: 7860
 pinned: false
 ---
 
-# TomeVox XTTSv2 TTS Engine
+# narrate.ink XTTSv2 TTS Engine
 
 A HuggingFace Space that serves the Coqui XTTSv2 model as a REST API,
-implementing the [TomeVox TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+implementing the [narrate.ink TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
 
 ## Endpoints
 
@@ -49,4 +49,4 @@ en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh-cn, ja, hu, ko
 2. Upload the contents of this folder
 3. Set the `API_KEY` secret in Space settings (optional)
 4. The model downloads automatically on first startup (~1.8 GB)
-5. Register the Space URL in TomeVox Settings under TTS Engine Management
+5. Register the Space URL in narrate.ink Settings under TTS Engine Management

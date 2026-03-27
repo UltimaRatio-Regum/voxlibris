@@ -9,7 +9,8 @@ import { ProjectEditor } from "@/components/ProjectEditor";
 import { AdminUsersPage } from "@/pages/AdminUsersPage";
 import { ChangePasswordDialog } from "@/components/ChangePasswordDialog";
 import { useAuth } from "@/lib/auth";
-import logoHorizontal from "@assets/tomevox_logo_horizontal.png";
+import narrateInkIcon from "@assets/narrate.ink.icon.1024.png";
+import narrateInkLogo from "@assets/narrate.ink.logo.dark.alpha.png";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,12 +56,9 @@ export default function Home() {
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between gap-4 px-4 mx-auto">
-          <div className="flex items-center">
-            <img 
-              src={logoHorizontal} 
-              alt="TomeVox"
-              className="h-10 w-auto"
-            />
+          <div className="flex items-center gap-2.5">
+            <img src={narrateInkIcon} alt="narrate.ink" className="h-9 w-9" />
+            <img src={narrateInkLogo} alt="narrate.ink" className="h-6 w-auto" />
           </div>
           <div className="flex items-center gap-3">
             <a href="/docs">

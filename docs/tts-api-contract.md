@@ -1,11 +1,11 @@
-# TomeVox TTS Engine API Contract
+# narrate.ink TTS Engine API Contract
 
 **Version:** 1.0
 **Last Updated:** 2026-03-21
 
 ## Overview
 
-This document defines the REST API contract that any TTS (Text-to-Speech) engine must implement to integrate with the TomeVox audiobook generator. TomeVox uses a dependency-injection model: engine implementors expose two HTTP endpoints at a configurable base URL, and TomeVox discovers capabilities and generates audio by calling those endpoints.
+This document defines the REST API contract that any TTS (Text-to-Speech) engine must implement to integrate with the narrate.ink audiobook generator. narrate.ink uses a dependency-injection model: engine implementors expose two HTTP endpoints at a configurable base URL, and narrate.ink discovers capabilities and generates audio by calling those endpoints.
 
 All request/response bodies use JSON (`application/json`) unless otherwise noted. Audio responses use `audio/wav` with PCM encoding.
 
@@ -13,13 +13,13 @@ All request/response bodies use JSON (`application/json`) unless otherwise noted
 
 ## Authentication
 
-If the engine requires authentication, TomeVox will send a Bearer token in the `Authorization` header on every request:
+If the engine requires authentication, narrate.ink will send a Bearer token in the `Authorization` header on every request:
 
 ```
 Authorization: Bearer <api_key>
 ```
 
-The API key is configured per-engine in TomeVox settings. Engines that do not require authentication should ignore this header.
+The API key is configured per-engine in narrate.ink settings. Engines that do not require authentication should ignore this header.
 
 ---
 
@@ -27,7 +27,7 @@ The API key is configured per-engine in TomeVox settings. Engines that do not re
 
 ### 1. `POST /GetEngineDetails`
 
-Returns the engine's capabilities, configuration, and available voices. TomeVox calls this endpoint when an engine is first registered and periodically to refresh cached metadata.
+Returns the engine's capabilities, configuration, and available voices. narrate.ink calls this endpoint when an engine is first registered and periodically to refresh cached metadata.
 
 #### Request
 
@@ -77,17 +77,17 @@ The response is a flat dictionary of engine properties. The following keys are d
 
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| `engine_id` | `string` | Yes | Unique identifier for this engine type. Used by TomeVox to detect duplicates. Must be lowercase alphanumeric with hyphens (e.g., `"chatterbox-tts"`, `"edge-tts"`). |
-| `engine_name` | `string` | Yes | Human-readable display name shown in the TomeVox UI (e.g., `"Chatterbox TTS"`). |
+| `engine_id` | `string` | Yes | Unique identifier for this engine type. Used by narrate.ink to detect duplicates. Must be lowercase alphanumeric with hyphens (e.g., `"chatterbox-tts"`, `"edge-tts"`). |
+| `engine_name` | `string` | Yes | Human-readable display name shown in the narrate.ink UI (e.g., `"Chatterbox TTS"`). |
 | `sample_rate` | `integer` | Yes | Sample rate of output audio in Hz (e.g., `24000`, `22050`, `44100`). |
 | `bit_depth` | `integer` | Yes | Bit depth of output audio (e.g., `16`, `24`). |
 | `channels` | `integer` | Yes | Number of audio channels (`1` for mono, `2` for stereo). Mono is strongly recommended. |
-| `max_seconds_per_conversion` | `integer` | Yes | Suggested maximum audio duration per request in seconds. TomeVox uses this to estimate chunk sizes. Not a hard limit. |
+| `max_seconds_per_conversion` | `integer` | Yes | Suggested maximum audio duration per request in seconds. narrate.ink uses this to estimate chunk sizes. Not a hard limit. |
 | `supports_voice_cloning` | `boolean` | Yes | Whether the engine can clone a voice from a provided audio sample. |
 | `builtin_voices` | `array` | Yes | List of available built-in voices. Empty array `[]` if no built-in voices. See **Voice Object** below. |
-| `supported_emotions` | `array` | No | List of emotion names the engine natively handles. If omitted, TomeVox will pass emotions but the engine may ignore them. |
+| `supported_emotions` | `array` | No | List of emotion names the engine natively handles. If omitted, narrate.ink will pass emotions but the engine may ignore them. |
 | `extra_properties` | `object` | No | Reserved for future engine-specific configuration. Should be an empty object `{}` if unused. |
-| `engine_params` | `array` | No | Declares engine-specific tunable parameters. TomeVox reads this once on registration and presents the parameters as UI controls. Each entry is a **Parameter Object** (see below). Omit or return `[]` if the engine has no tunable knobs. |
+| `engine_params` | `array` | No | Declares engine-specific tunable parameters. narrate.ink reads this once on registration and presents the parameters as UI controls. Each entry is a **Parameter Object** (see below). Omit or return `[]` if the engine has no tunable knobs. |
 
 #### Parameter Object Schema
 
@@ -97,7 +97,7 @@ Each entry in `engine_params` has the following structure:
 |-----|------|----------|-------------|
 | `short_name` | `string` | Yes | Machine-readable key, used as the key in `engine_options` when calling `ConvertTextToSpeech`. |
 | `friendly_name` | `string` | Yes | Human-readable label shown in the UI. |
-| `data_type` | `string` | Yes | One of `"int"`, `"float"`, `"string"`, `"list"`. Controls the input widget rendered by TomeVox. |
+| `data_type` | `string` | Yes | One of `"int"`, `"float"`, `"string"`, `"list"`. Controls the input widget rendered by narrate.ink. |
 | `default_value` | any | Yes | Default value used when no value has been set by the user. |
 | `min_value` | `number` | No | Minimum value for `int` / `float` parameters. |
 | `max_value` | `number` | No | Maximum value for `int` / `float` parameters. |
@@ -218,15 +218,15 @@ The response body is the raw bytes of a PCM-encoded WAV file. The audio format (
 
 6. **Graceful degradation:** If a requested feature is not supported (e.g., an unrecognized emotion), the engine should generate audio with its best default behavior rather than returning an error, unless the request is fundamentally invalid.
 
-### For TomeVox (Client Behavior)
+### For narrate.ink (Client Behavior)
 
-1. **Chunking:** TomeVox splits text into chunks based on `max_seconds_per_conversion` from `GetEngineDetails`. Each chunk is sent as a separate `ConvertTextToSpeech` request.
+1. **Chunking:** narrate.ink splits text into chunks based on `max_seconds_per_conversion` from `GetEngineDetails`. Each chunk is sent as a separate `ConvertTextToSpeech` request.
 
-2. **Voice selection priority:** If `voice_to_clone_sample` is provided, it takes precedence over `builtin_voice_id`. TomeVox will only send one of the two in most cases.
+2. **Voice selection priority:** If `voice_to_clone_sample` is provided, it takes precedence over `builtin_voice_id`. narrate.ink will only send one of the two in most cases.
 
-3. **Caching:** TomeVox caches `GetEngineDetails` responses in PostgreSQL. The response is refreshed when the user explicitly tests/refreshes an engine from settings.
+3. **Caching:** narrate.ink caches `GetEngineDetails` responses in PostgreSQL. The response is refreshed when the user explicitly tests/refreshes an engine from settings.
 
-4. **Retry policy:** On `429` or `5xx` errors, TomeVox retries with exponential backoff (max 3 retries).
+4. **Retry policy:** On `429` or `5xx` errors, narrate.ink retries with exponential backoff (max 3 retries).
 
 ---
 
@@ -323,7 +323,7 @@ The response body is the raw bytes of a PCM-encoded WAV file. The audio format (
     },
     "engine_params": {
       "type": "array",
-      "description": "Engine-specific tunable parameters exposed to the TomeVox UI",
+      "description": "Engine-specific tunable parameters exposed to the narrate.ink UI",
       "items": {
         "type": "object",
         "required": ["short_name", "friendly_name", "data_type", "default_value"],

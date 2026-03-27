@@ -11,7 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import logoHorizontal from "@assets/tomevox_logo_horizontal.png";
+import narrateInkIcon from "@assets/narrate.ink.icon.1024.png";
+import narrateInkLogo from "@assets/narrate.ink.logo.dark.alpha.png";
 
 interface DocEntry {
   slug: string;
@@ -119,8 +120,11 @@ function DocsSidebar({
     >
       <div className="p-4 border-b">
         <div className="flex items-center justify-between mb-3">
-          <Link href="/docs" className="flex items-center gap-2">
-            <img src={logoHorizontal} alt="TomeVox" className="h-7 w-auto" />
+          <Link href="/docs" className="flex items-center gap-3">
+            <div className="flex flex-col items-center gap-1">
+              <img src={narrateInkIcon} alt="narrate.ink" className="h-10 w-10" />
+              <img src={narrateInkLogo} alt="narrate.ink" className="h-4 w-auto" />
+            </div>
             <span className="text-sm font-medium text-muted-foreground">Docs</span>
           </Link>
           <Button
@@ -325,9 +329,9 @@ export default function DocsPage() {
 
   useEffect(() => {
     if (doc?.title) {
-      document.title = `${doc.title} - TomeVox Docs`;
+      document.title = `${doc.title} - narrate.ink Docs`;
     } else {
-      document.title = "TomeVox Documentation";
+      document.title = "narrate.ink Documentation";
     }
   }, [doc?.title]);
 

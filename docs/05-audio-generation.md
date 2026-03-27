@@ -8,7 +8,7 @@ keywords: [generation, jobs, TTS, audio, progress, queue, background]
 
 # Audio Generation & Jobs
 
-Audio generation in TomeVox runs as background jobs, allowing you to continue working while audio is being created.
+Audio generation in narrate.ink runs as background jobs, allowing you to continue working while audio is being created.
 
 ## Starting Generation
 
@@ -59,7 +59,7 @@ Jobs are paginated for performance. Use the navigation controls to browse throug
 
 ## Audio Processing Pipeline
 
-When a chunk is generated, TomeVox applies several processing steps:
+When a chunk is generated, narrate.ink applies several processing steps:
 
 1. **TTS synthesis** — The engine generates raw speech audio
 2. **Pitch adjustment** — Applied via pyrubberband if a pitch offset is set

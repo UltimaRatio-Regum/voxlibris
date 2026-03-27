@@ -1,5 +1,5 @@
 ---
-title: TomeVox Chatterbox TTS Engine
+title: narrate.ink Chatterbox TTS Engine
 emoji: 🗣️
 colorFrom: purple
 colorTo: indigo
@@ -8,11 +8,11 @@ app_port: 7860
 pinned: false
 ---
 
-# TomeVox Chatterbox TTS Engine
+# narrate.ink Chatterbox TTS Engine
 
 A HuggingFace Space that serves [Chatterbox TTS](https://github.com/resemble-ai/chatterbox)
 as a REST API, implementing the
-[TomeVox TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
+[narrate.ink TTS Engine API Contract](https://github.com/your-repo/docs/tts-api-contract.md).
 
 ## Endpoints
 
@@ -24,7 +24,7 @@ Returns engine capabilities, supported emotions, and voice cloning support.
 
 Converts text to speech with voice cloning. Requires a `voice_to_clone_sample`
 (base64-encoded WAV). Supports emotion-driven expressiveness via the exaggeration
-parameter, mapped automatically from TomeVox emotions.
+parameter, mapped automatically from narrate.ink emotions.
 
 ### GET /health
 
@@ -45,7 +45,7 @@ field. A 6-15 second clear speech sample works best.
 ## Emotion Support
 
 Chatterbox controls expressiveness through its `exaggeration` parameter (0.0-1.0).
-The engine automatically maps TomeVox emotions to appropriate exaggeration levels:
+The engine automatically maps narrate.ink emotions to appropriate exaggeration levels:
 
 | Emotion   | Exaggeration | Description               |
 |-----------|-------------|---------------------------|
@@ -72,4 +72,4 @@ The `intensity` parameter (1-100) scales the exaggeration further.
 3. Set the `API_KEY` secret in Space settings (optional)
 4. The model downloads automatically on first startup (~500 MB)
 5. Requires GPU (T4 minimum recommended)
-6. Register the Space URL in TomeVox Settings under TTS Engine Management
+6. Register the Space URL in narrate.ink Settings under TTS Engine Management

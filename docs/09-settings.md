@@ -8,7 +8,7 @@ keywords: [settings, configuration, TTS engine, parsing prompt, emotion weights,
 
 # Settings
 
-The Settings tab lets you configure TomeVox to match your workflow and preferences.
+The Settings tab lets you configure narrate.ink to match your workflow and preferences.
 
 ## Default TTS Settings
 
@@ -57,7 +57,7 @@ Register and manage external TTS services:
 
 ### Engine-Specific Parameters
 
-When an engine is registered, TomeVox reads its `engine_params` declaration from `GetEngineDetails` and presents those parameters as UI controls in generation settings and the chunk editor. For example, Chatterbox exposes:
+When an engine is registered, narrate.ink reads its `engine_params` declaration from `GetEngineDetails` and presents those parameters as UI controls in generation settings and the chunk editor. For example, Chatterbox exposes:
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
@@ -65,7 +65,7 @@ When an engine is registered, TomeVox reads its `engine_params` declaration from
 | **CFG Weight** | 0.0 – 1.0 | Classifier-free guidance strength |
 | **Temperature** | 0.05 – 5.0 | Sampling randomness |
 
-Engine-specific parameters override the automatic emotion-to-parameter mapping when set explicitly. Each engine defines its own set; parameters are discovered automatically and require no configuration in TomeVox.
+Engine-specific parameters override the automatic emotion-to-parameter mapping when set explicitly. Each engine defines its own set; parameters are discovered automatically and require no configuration in narrate.ink.
 
 ### Engine Concurrency
 
